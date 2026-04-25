@@ -9,15 +9,14 @@ type TaskRepository struct {
 	db *sql.DB
 }
 
-// Конструктор (Dependency Injection)
 func NewTaskRepository(db *sql.DB) *TaskRepository {
 	return &TaskRepository{db: db}
 }
 
 func (r *TaskRepository) CreateTask(t *models.Task) (int, error) {
 	var id int
-	err := r.db.QueryRow("INSERT INTO tasks (title, opt, real, pess) VALUES ($1, $2, $3, $4) RETURNING id",
-		t.Title, t.Opt, t.Real, t.Pess).Scan(&id)
+	err := r.db.QueryRow("INSERT INTO tasks (title, opt, real, pess, user_id) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+		t.Title, t.Opt, t.Real, t.Pess, t.UserID).Scan(&id)
 	return id, err
 }
 
@@ -26,16 +25,17 @@ func (r *TaskRepository) CreateDependency(taskID, dependsOnID int) error {
 	return err
 }
 
-func (r *TaskRepository) ClearDependencies() error {
-	_, err := r.db.Exec("TRUNCATE dependencies")
+// Удаляем связи ТОЛЬКО для задач конкретного пользователя
+func (r *TaskRepository) ClearDependencies(userID int) error {
+	_, err := r.db.Exec(`DELETE FROM dependencies WHERE task_id IN (SELECT id FROM tasks WHERE user_id = $1)`, userID)
 	return err
 }
 
-// Fallback: Запрос в долгую базу, если Redis пуст
-func (r *TaskRepository) GetGraphData() (*models.GraphData, error) {
+// Достаем граф ТОЛЬКО конкретного пользователя
+func (r *TaskRepository) GetGraphData(userID int) (*models.GraphData, error) {
 	graph := &models.GraphData{}
 
-	rowsNodes, _ := r.db.Query("SELECT id, title, opt, real, pess, duration_hours, priority_score FROM tasks")
+	rowsNodes, _ := r.db.Query("SELECT id, title, opt, real, pess, duration_hours, priority_score FROM tasks WHERE user_id = $1", userID)
 	defer rowsNodes.Close()
 	for rowsNodes.Next() {
 		var t models.Task
@@ -43,7 +43,11 @@ func (r *TaskRepository) GetGraphData() (*models.GraphData, error) {
 		graph.Nodes = append(graph.Nodes, t)
 	}
 
-	rowsEdges, _ := r.db.Query("SELECT depends_on_id, task_id FROM dependencies")
+	rowsEdges, _ := r.db.Query(`
+		SELECT d.depends_on_id, d.task_id 
+		FROM dependencies d 
+		JOIN tasks t ON d.task_id = t.id 
+		WHERE t.user_id = $1`, userID)
 	defer rowsEdges.Close()
 	for rowsEdges.Next() {
 		var e models.GraphEdge

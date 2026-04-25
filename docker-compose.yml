@@ -7,11 +7,14 @@ services:
       POSTGRES_PASSWORD: password
       POSTGRES_DB: smartsync
     ports:
-      - "5433:5432" # Изменили левую цифру на 5433
-    volumes:
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+      - "5433:5432"
 
   nats:
     image: nats:latest
     ports:
       - "4222:4222"
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"

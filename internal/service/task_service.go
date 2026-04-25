@@ -22,7 +22,6 @@ func NewTaskService(repo *repository.TaskRepository, nc *nats.Conn, rdb *redis.C
 }
 
 func (s *TaskService) CreateTask(t *models.Task) (int, error) {
-	// Валидация
 	if t.Opt == 0 {
 		t.Opt = 1
 	}
@@ -38,38 +37,38 @@ func (s *TaskService) CreateTask(t *models.Task) (int, error) {
 		return 0, err
 	}
 
-	// Event-Driven: оповещаем математический движок
-	s.nc.Publish("task.created", []byte(fmt.Sprintf("%d", id)))
+	// Передаем в шину данных ID пользователя, чтобы Math Engine пересчитал только ЕГО граф
+	payload := fmt.Sprintf(`{"task_id": %d, "user_id": %d}`, id, t.UserID)
+	s.nc.Publish("task.created", []byte(payload))
 	return id, nil
 }
 
-func (s *TaskService) CreateDependency(taskID, dependsOnID int) error {
+func (s *TaskService) CreateDependency(taskID, dependsOnID, userID int) error {
 	err := s.repo.CreateDependency(taskID, dependsOnID)
 	if err == nil {
-		s.nc.Publish("graph.updated", []byte("updated"))
+		s.nc.Publish("graph.updated", []byte(fmt.Sprintf(`{"user_id": %d}`, userID)))
 	}
 	return err
 }
 
-func (s *TaskService) ClearDependencies() error {
-	err := s.repo.ClearDependencies()
+func (s *TaskService) ClearDependencies(userID int) error {
+	err := s.repo.ClearDependencies(userID)
 	if err == nil {
-		s.nc.Publish("graph.updated", []byte("reset"))
+		s.nc.Publish("graph.updated", []byte(fmt.Sprintf(`{"user_id": %d}`, userID)))
 	}
 	return err
 }
 
-// CQRS Query: Паттерн Cache-Aside
-func (s *TaskService) GetGraph(ctx context.Context) (*models.GraphData, bool, error) {
-	// 1. Попытка сверхбыстрого чтения из Redis
-	val, err := s.redis.Get(ctx, "smartsync:graph").Result()
+func (s *TaskService) GetGraph(ctx context.Context, userID int) (*models.GraphData, bool, error) {
+	// Персональный кэш пользователя!
+	cacheKey := fmt.Sprintf("smartsync:graph:user:%d", userID)
+	val, err := s.redis.Get(ctx, cacheKey).Result()
 	if err == nil {
 		var graph models.GraphData
 		json.Unmarshal([]byte(val), &graph)
-		return &graph, true, nil // true = взято из кэша
+		return &graph, true, nil
 	}
 
-	// 2. Если в кэше пусто — фоллбэк на Postgres
-	graph, err := s.repo.GetGraphData()
+	graph, err := s.repo.GetGraphData(userID)
 	return graph, false, err
 }
