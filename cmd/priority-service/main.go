@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"log"
 	"os"
 	"os/signal"
@@ -17,7 +18,6 @@ import (
 )
 
 func main() {
-	// 1. Инфраструктура
 	db, err := sql.Open("postgres", "postgres://user:password@127.0.0.1:5433/smartsync?sslmode=disable")
 	if err != nil {
 		log.Fatal(err)
@@ -32,18 +32,33 @@ func main() {
 	}
 	defer nc.Close()
 
-	// 2. Внедрение зависимостей
 	repo := repository.NewStorage(db, rdb)
 	mathEngine := service.NewCalculatorService(repo)
 
-	// 3. Подписка на события шины
 	ctx := context.Background()
-	log.Println("Math Engine [Clean Architecture] запущен. Ожидание событий...")
+	log.Println("Math Engine [Multi-Tenant Edition] запущен. Ожидание событий...")
 
-	nc.Subscribe("graph.updated", func(m *nats.Msg) { mathEngine.RecalculateAll(ctx) })
-	nc.Subscribe("task.created", func(m *nats.Msg) { mathEngine.RecalculateAll(ctx) })
+	// Правильные подписки с парсингом user_id
+	nc.Subscribe("graph.updated", func(m *nats.Msg) {
+		var data struct {
+			UserID int `json:"user_id"`
+		}
+		json.Unmarshal(m.Data, &data)
+		if data.UserID > 0 {
+			mathEngine.RecalculateAll(ctx, data.UserID)
+		}
+	})
 
-	// Удержание процесса
+	nc.Subscribe("task.created", func(m *nats.Msg) {
+		var data struct {
+			UserID int `json:"user_id"`
+		}
+		json.Unmarshal(m.Data, &data)
+		if data.UserID > 0 {
+			mathEngine.RecalculateAll(ctx, data.UserID)
+		}
+	})
+
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 	<-sigChan

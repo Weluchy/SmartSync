@@ -15,23 +15,20 @@ func NewCalculatorService(repo *repository.Storage) *CalculatorService {
 	return &CalculatorService{repo: repo}
 }
 
-// Главная функция пересчета (CQRS Command)
-func (s *CalculatorService) RecalculateAll(ctx context.Context) error {
-	tasks, _ := s.repo.GetAllTasks()
-	edges, _ := s.repo.GetAllEdges()
+// Теперь функция принимает userID!
+func (s *CalculatorService) RecalculateAll(ctx context.Context, userID int) error {
+	tasks, _ := s.repo.GetAllTasks(userID)
+	edges, _ := s.repo.GetAllEdges(userID)
 
-	// 1. Вычисляем PERT (Ожидаемое время)
 	for _, t := range tasks {
 		t.DurationHours = float64(t.Opt+4*t.Real+t.Pess) / 6.0
 	}
 
-	// 2. Строим карту смежности для графа
 	graphMap := make(map[int][]int)
 	for _, e := range edges {
 		graphMap[e.From] = append(graphMap[e.From], e.To)
 	}
 
-	// 3. Алгоритм DFS с защитой от циклов
 	memo := make(map[int]float64)
 	visiting := make(map[int]bool)
 
@@ -50,7 +47,7 @@ func (s *CalculatorService) RecalculateAll(ctx context.Context) error {
 			childWeight, err := dfs(child)
 			if err != nil {
 				return 0, err
-			} // Проброс ошибки цикла
+			}
 			if childWeight > maxChildPath {
 				maxChildPath = childWeight
 			}
@@ -62,25 +59,21 @@ func (s *CalculatorService) RecalculateAll(ctx context.Context) error {
 		return weight, nil
 	}
 
-	// 4. Применяем расчеты ко всем узлам
 	var finalNodes []models.Task
 	for id, t := range tasks {
 		score, err := dfs(id)
 		if err != nil {
-			fmt.Printf("[ОШИБКА МАТЕМАТИКИ] %v. Расчет прерван.\n", err)
+			fmt.Printf("[ОШИБКА МАТЕМАТИКИ] %v. Пользователь ID: %d\n", err, userID)
 			return err
 		}
 		t.PriorityScore = score
 		finalNodes = append(finalNodes, *t)
-
-		// Сохраняем новые цифры в БД
 		s.repo.UpdateTaskScores(t)
 	}
 
-	// 5. Кэшируем готовый слепок для фронтенда
 	snapshot := models.GraphData{Nodes: finalNodes, Edges: edges}
-	s.repo.CacheGraphSnapshot(ctx, snapshot)
+	s.repo.CacheGraphSnapshot(ctx, userID, snapshot)
 
-	fmt.Println("[Math Engine] Граф пересчитан и закэширован")
+	fmt.Printf("[Math Engine] Граф пересчитан и закэширован для UserID: %d\n", userID)
 	return nil
 }

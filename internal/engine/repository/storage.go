@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"smartsync/internal/engine/models"
@@ -20,8 +21,8 @@ func NewStorage(db *sql.DB, rdb *redis.Client) *Storage {
 	return &Storage{db: db, rdb: rdb}
 }
 
-func (s *Storage) GetAllTasks() (map[int]*models.Task, error) {
-	rows, err := s.db.Query("SELECT id, title, opt, real, pess FROM tasks")
+func (s *Storage) GetAllTasks(userID int) (map[int]*models.Task, error) {
+	rows, err := s.db.Query("SELECT id, title, opt, real, pess FROM tasks WHERE user_id = $1", userID)
 	if err != nil {
 		return nil, err
 	}
@@ -36,8 +37,12 @@ func (s *Storage) GetAllTasks() (map[int]*models.Task, error) {
 	return tasks, nil
 }
 
-func (s *Storage) GetAllEdges() ([]models.GraphEdge, error) {
-	rows, err := s.db.Query("SELECT depends_on_id, task_id FROM dependencies")
+func (s *Storage) GetAllEdges(userID int) ([]models.GraphEdge, error) {
+	rows, err := s.db.Query(`
+		SELECT d.depends_on_id, d.task_id 
+		FROM dependencies d 
+		JOIN tasks t ON d.task_id = t.id 
+		WHERE t.user_id = $1`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -58,7 +63,9 @@ func (s *Storage) UpdateTaskScores(t *models.Task) error {
 	return err
 }
 
-func (s *Storage) CacheGraphSnapshot(ctx context.Context, graph models.GraphData) error {
+func (s *Storage) CacheGraphSnapshot(ctx context.Context, userID int, graph models.GraphData) error {
 	graphJSON, _ := json.Marshal(graph)
-	return s.rdb.Set(ctx, "smartsync:graph", graphJSON, 1*time.Hour).Err()
+	// Сохраняем изолированно для каждого пользователя!
+	cacheKey := fmt.Sprintf("smartsync:graph:user:%d", userID)
+	return s.rdb.Set(ctx, cacheKey, graphJSON, 1*time.Hour).Err()
 }
