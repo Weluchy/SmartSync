@@ -110,13 +110,15 @@
             if (res.status === 401) return logout();
             const data = await res.json();
             
-            const nodes = new vis.DataSet(data.nodes?.map(n => ({
+      
+            const nodes = new vis.DataSet(data.nodes ? data.nodes.map(n => ({
                 id: n.id, 
                 label: `ID:${n.id}\n${n.title}\n${n.priority_score.toFixed(1)}`,
                 color: n.priority_score > n.duration_hours ? '#fca5a5' : '#bfdbfe',
                 shape: 'box'
-            })));
-            const edges = new vis.DataSet(data.edges?.map(e => ({from: e.from, to: e.to, arrows: 'to'})));
+            })) : []);
+            
+            const edges = new vis.DataSet(data.edges ? data.edges.map(e => ({from: e.from, to: e.to, arrows: 'to'})) : []);
             new vis.Network(document.getElementById('mynetwork'), {nodes, edges}, {layout: {hierarchical: {direction: 'LR'}}});
         }
 

@@ -20,19 +20,6 @@ func NewHandler(s *service.TaskService) *Handler {
 func (h *Handler) InitRoutes() *gin.Engine {
 	r := gin.Default()
 
-	r.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE")
-		// ОЧЕНЬ ВАЖНО: Разрешаем фронтенду отправлять токен
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-		c.Writer.Header().Set("Access-Control-Expose-Headers", "X-Cache")
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
-			return
-		}
-		c.Next()
-	})
-
 	// Защищенная группа роутов. Сюда нельзя попасть без токена!
 	protected := r.Group("/")
 	protected.Use(AuthMiddleware())
