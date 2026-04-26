@@ -10,8 +10,31 @@ type TaskRepository struct {
 }
 
 func NewTaskRepository(db *sql.DB) *TaskRepository {
+	// Enterprise-паттерн: Автоматическая миграция БД при старте сервиса
+
+	// 1. Создаем таблицу задач (с колонкой user_id)
+	db.Exec(`CREATE TABLE IF NOT EXISTS tasks (
+		id SERIAL PRIMARY KEY,
+		user_id INTEGER NOT NULL,
+		title VARCHAR(255) NOT NULL,
+		opt INTEGER DEFAULT 1,
+		real INTEGER DEFAULT 1,
+		pess INTEGER DEFAULT 1,
+		duration_hours FLOAT DEFAULT 0,
+		priority_score FLOAT DEFAULT 0
+	)`)
+
+	// 2. Создаем таблицу зависимостей (связи графа)
+	db.Exec(`CREATE TABLE IF NOT EXISTS dependencies (
+		task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+		depends_on_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+		UNIQUE(task_id, depends_on_id)
+	)`)
+
 	return &TaskRepository{db: db}
 }
+
+// ... дальше идут твои функции CreateTask, CreateDependency и т.д. (оставь их без изменений)
 
 func (r *TaskRepository) CreateTask(t *models.Task) (int, error) {
 	var id int
