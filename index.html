@@ -65,6 +65,20 @@
                  🔗 Удалить (Сшить края)
                 </button>
             </div>
+            
+            <div id="editMenu" class="absolute top-4 left-4 bg-white p-4 rounded-xl shadow-lg border border-gray-200 hidden z-10 w-64">
+    <h3 class="font-bold text-sm mb-2 text-gray-700">Редактировать задачу</h3>
+    <input type="text" id="e_title" class="w-full border p-1.5 rounded mb-2 text-sm" placeholder="Название">
+    <div class="grid grid-cols-3 gap-1 mb-2">
+        <input type="number" id="e_opt" class="border p-1 rounded text-xs text-center" placeholder="O">
+        <input type="number" id="e_real" class="border p-1 rounded text-xs text-center" placeholder="M">
+        <input type="number" id="e_pess" class="border p-1 rounded text-xs text-center" placeholder="P">
+    </div>
+    <div class="flex gap-2">
+        <button onclick="saveEdit()" class="bg-blue-600 text-white px-2 py-1.5 flex-1 rounded text-xs font-bold">Сохранить</button>
+        <button onclick="closeEdit()" class="bg-gray-200 text-gray-700 px-2 py-1.5 rounded text-xs font-bold">Отмена</button>
+    </div>
+</div>
         </div>
     </div>
 
@@ -127,7 +141,6 @@
             })) : []);
             
             const edges = new vis.DataSet(data.edges ? data.edges.map(e => ({from: e.from, to: e.to, arrows: 'to'})) : []);
-            new vis.Network(document.getElementById('mynetwork'), {nodes, edges}, {layout: {hierarchical: {direction: 'LR'}}});
 
             // Сохраняем сеть в глобальную переменную
             window.network = new vis.Network(document.getElementById('mynetwork'), {nodes, edges}, {
@@ -136,11 +149,25 @@
             });
 
             // Обработка выделения узла
-            window.network.on("selectNode", function () {
+            window.network.on("selectNode", function (params) {
                 document.getElementById('deleteMenu').classList.remove('hidden');
+                
+                // Находим данные выделенного узла из графа
+                const nodeId = params.nodes[0];
+                // В data.nodes лежат сырые данные с бэкенда
+                const nodeData = data.nodes.find(n => n.id === nodeId); 
+                
+                if (nodeData) {
+                    document.getElementById('editMenu').classList.remove('hidden');
+                    document.getElementById('e_title').value = nodeData.title;
+                    document.getElementById('e_opt').value = nodeData.opt;
+                    document.getElementById('e_real').value = nodeData.real;
+                    document.getElementById('e_pess').value = nodeData.pess;
+                }
             });
             window.network.on("deselectNode", function () {
                 document.getElementById('deleteMenu').classList.add('hidden');
+                document.getElementById('editMenu').classList.add('hidden');
             });
         }
 
@@ -151,12 +178,17 @@
                 headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
                 body: JSON.stringify({
                     title: document.getElementById('t_title').value,
-                    opt: parseInt(document.getElementById('t_opt').value),
-                    real: parseInt(document.getElementById('t_real').value),
-                    pess: parseInt(document.getElementById('t_pess').value)
+                    opt: parseInt(document.getElementById('t_opt').value) || 1,
+                    real: parseInt(document.getElementById('t_real').value) || 1,
+                    pess: parseInt(document.getElementById('t_pess').value) || 1
                 })
             });
-            loadGraph();
+            
+            // Очищаем форму, чтобы было удобно вводить следующую задачу
+            e.target.reset();
+            
+            // Ждем пересчета от Math Engine перед загрузкой графа
+            setTimeout(loadGraph, 400); 
         };
 
         // 1. Функция создания зависимости
@@ -209,6 +241,30 @@
             });
             
             document.getElementById('deleteMenu').classList.add('hidden');
+            setTimeout(loadGraph, 400); 
+        };
+
+        window.closeEdit = () => {
+            document.getElementById('editMenu').classList.add('hidden');
+        };
+
+        window.saveEdit = async () => {
+            const selectedNodes = window.network.getSelectedNodes();
+            if (selectedNodes.length === 0) return;
+            
+            const taskId = selectedNodes[0];
+            await fetch(`${GATEWAY}/tasks/${taskId}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+                body: JSON.stringify({
+                    title: document.getElementById('e_title').value,
+                    opt: parseInt(document.getElementById('e_opt').value),
+                    real: parseInt(document.getElementById('e_real').value),
+                    pess: parseInt(document.getElementById('e_pess').value)
+                })
+            });
+            
+            closeEdit();
             setTimeout(loadGraph, 400); 
         };
 

@@ -95,3 +95,12 @@ func (s *TaskService) DeleteDependency(taskID, dependsOnID, userID int) error {
 	}
 	return err
 }
+
+func (s *TaskService) UpdateTask(t *models.Task) error {
+	err := s.repo.UpdateTask(t)
+	if err == nil {
+		s.redis.Del(context.Background(), fmt.Sprintf("smartsync:graph:user:%d", t.UserID))
+		s.nc.Publish("graph.updated", []byte(fmt.Sprintf(`{"user_id": %d}`, t.UserID)))
+	}
+	return err
+}

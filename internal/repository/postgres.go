@@ -155,3 +155,12 @@ func (r *TaskRepository) GetGraphData(userID int) (*models.GraphData, error) {
 
 	return graph, nil
 }
+
+func (r *TaskRepository) UpdateTask(t *models.Task) error {
+	_, err := r.db.Exec(`
+		UPDATE tasks 
+		SET title = $1, opt = $2, real = $3, pess = $4 
+		WHERE id = $5 AND user_id = $6
+	`, t.Title, t.Opt, t.Real, t.Pess, t.ID, t.UserID)
+	return err
+}

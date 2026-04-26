@@ -115,3 +115,23 @@ func (h *Handler) deleteDependency(c *gin.Context) {
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Связь удалена"})
 }
+
+func (h *Handler) updateTask(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	taskID, _ := strconv.Atoi(c.Param("id"))
+
+	var t models.Task
+	if err := c.ShouldBindJSON(&t); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат данных"})
+		return
+	}
+
+	t.ID = taskID
+	t.UserID = userID.(int)
+
+	if err := h.service.UpdateTask(&t); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось обновить задачу"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Задача обновлена"})
+}

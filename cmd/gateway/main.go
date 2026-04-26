@@ -21,6 +21,7 @@ func main() {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE, PUT")
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
 			return
@@ -42,7 +43,7 @@ func main() {
 		protected.POST("/tasks/:id/dependencies", taskProxy)
 		protected.DELETE("/dependencies", taskProxy)
 		protected.GET("/graph", taskProxy)
-
+		protected.PUT("/tasks/:id", taskProxy)
 		// НОВЫЕ МАРШРУТЫ ДЛЯ УДАЛЕНИЯ:
 		protected.DELETE("/tasks/:id", taskProxy)
 		protected.DELETE("/tasks/:id/dependencies/:dep_id", taskProxy)
