@@ -64,11 +64,60 @@ func (r *TaskRepository) ClearDependencies(userID int) error {
 	return err
 }
 
-func (r *TaskRepository) DeleteTask(taskID, userID int) error {
-	// Благодаря ON DELETE CASCADE в нашей таблице dependencies,
-	// все связи этой задачи удалятся базой данных автоматически!
-	_, err := r.db.Exec("DELETE FROM tasks WHERE id = $1 AND user_id = $2", taskID, userID)
-	return err
+func (r *TaskRepository) DeleteTask(taskID, userID int, heal bool) error {
+	// Открываем транзакцию (выполняется либо всё, либо ничего)
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback() // Если что-то пойдет не так, изменения откатятся
+
+	// 1. Проверяем владельца (безопасность превыше всего)
+	var ownerID int
+	err = tx.QueryRow("SELECT user_id FROM tasks WHERE id = $1", taskID).Scan(&ownerID)
+	if err != nil || ownerID != userID {
+		return fmt.Errorf("задача не найдена или доступ запрещен")
+	}
+
+	// 2. Если пользователь хочет "сшить" связи
+	if heal {
+		// Ищем родителей (от кого зависела удаляемая задача)
+		rowsP, _ := tx.Query("SELECT depends_on_id FROM dependencies WHERE task_id = $1", taskID)
+		var parents []int
+		for rowsP.Next() {
+			var p int
+			rowsP.Scan(&p)
+			parents = append(parents, p)
+		}
+		rowsP.Close()
+
+		// Ищем детей (кто зависел от удаляемой задачи)
+		rowsC, _ := tx.Query("SELECT task_id FROM dependencies WHERE depends_on_id = $1", taskID)
+		var children []int
+		for rowsC.Next() {
+			var c int
+			rowsC.Scan(&c)
+			children = append(children, c)
+		}
+		rowsC.Close()
+
+		// Связываем всех детей со всеми родителями напрямую
+		for _, child := range children {
+			for _, parent := range parents {
+				// ON CONFLICT DO NOTHING защищает от ошибки, если такая связь уже существует
+				tx.Exec("INSERT INTO dependencies (task_id, depends_on_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", child, parent)
+			}
+		}
+	}
+
+	// 3. Удаляем саму задачу (ON DELETE CASCADE удалит старые связи с ней автоматически)
+	_, err = tx.Exec("DELETE FROM tasks WHERE id = $1 AND user_id = $2", taskID, userID)
+	if err != nil {
+		return err
+	}
+
+	// Фиксируем транзакцию
+	return tx.Commit()
 }
 
 func (r *TaskRepository) DeleteDependency(taskID, dependsOnID, userID int) error {

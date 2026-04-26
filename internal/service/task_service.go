@@ -78,8 +78,8 @@ func (s *TaskService) GetGraph(ctx context.Context, userID int) (*models.GraphDa
 	return graph, false, err
 }
 
-func (s *TaskService) DeleteTask(taskID, userID int) error {
-	err := s.repo.DeleteTask(taskID, userID)
+func (s *TaskService) DeleteTask(taskID, userID int, heal bool) error {
+	err := s.repo.DeleteTask(taskID, userID, heal)
 	if err == nil {
 		s.redis.Del(context.Background(), fmt.Sprintf("smartsync:graph:user:%d", userID))
 		s.nc.Publish("graph.updated", []byte(fmt.Sprintf(`{"user_id": %d}`, userID)))

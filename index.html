@@ -57,9 +57,14 @@
                 <div id="mynetwork" style="height: 500px;"></div>
                 <button onclick="resetDeps()" class="absolute bottom-4 left-4 bg-red-50 text-red-600 px-3 py-1 rounded text-xs font-bold border border-red-200">Сбросить граф</button>
             </div>
-            <button id="deleteSelectedBtn" class="absolute top-4 right-4 bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md hidden hover:bg-red-700">
-                Удалить выбранное (Del)
-            </button>
+            <div id="deleteMenu" class="absolute top-4 right-4 flex flex-col gap-2 hidden z-10">
+                <button onclick="deleteSelectedNode(false)" class="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-red-700 transition">
+                 🗑 Удалить (Разорвать связи)
+                </button>
+                <button onclick="deleteSelectedNode(true)" class="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-orange-600 transition">
+                 🔗 Удалить (Сшить края)
+                </button>
+            </div>
         </div>
     </div>
 
@@ -132,10 +137,10 @@
 
             // Обработка выделения узла
             window.network.on("selectNode", function () {
-                document.getElementById('deleteSelectedBtn').classList.remove('hidden');
+                document.getElementById('deleteMenu').classList.remove('hidden');
             });
             window.network.on("deselectNode", function () {
-                document.getElementById('deleteSelectedBtn').classList.add('hidden');
+                document.getElementById('deleteMenu').classList.add('hidden');
             });
         }
 
@@ -199,6 +204,25 @@
             
             document.getElementById('deleteSelectedBtn').classList.add('hidden');
             setTimeout(loadGraph, 400); // Ждем пересчета
+        };
+        // Глобальная функция удаления с параметром heal (сшивать или нет)
+        window.deleteSelectedNode = async (heal) => {
+            const actionText = heal ? "Удалить задачу и связать ее соседей напрямую?" : "Удалить задачу и разорвать все ее связи?";
+            if (!confirm(actionText)) return;
+            
+            const selectedNodes = window.network.getSelectedNodes();
+            if (selectedNodes.length === 0) return;
+            
+            const taskId = selectedNodes[0];
+            
+            // Отправляем запрос с параметром heal
+            await fetch(`${GATEWAY}/tasks/${taskId}?heal=${heal}`, {
+                method: 'DELETE',
+                headers: {'Authorization': `Bearer ${token}`}
+            });
+            
+            document.getElementById('deleteMenu').classList.add('hidden');
+            setTimeout(loadGraph, 400); 
         };
 
         checkSession();

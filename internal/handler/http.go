@@ -94,7 +94,10 @@ func (h *Handler) deleteTask(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	taskID, _ := strconv.Atoi(c.Param("id"))
 
-	if err := h.service.DeleteTask(taskID, userID.(int)); err != nil {
+	// Ловим параметр сшивания: если в URL есть ?heal=true, то heal будет равно true
+	heal := c.Query("heal") == "true"
+
+	if err := h.service.DeleteTask(taskID, userID.(int), heal); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось удалить задачу"})
 		return
 	}
