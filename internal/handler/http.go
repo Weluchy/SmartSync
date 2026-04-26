@@ -24,19 +24,24 @@ func NewHandler(ts *service.TaskService, ps *service.ProjectService) *Handler {
 func (h *Handler) InitRoutes() *gin.Engine {
 	r := gin.Default()
 
+	// Внимание: Блок CORS удален, так как мы настроили его в Gateway!
+	// Если оставить его здесь, браузер выдаст ошибку "multiple values '*, *'"
+
 	protected := r.Group("/")
 	protected.Use(AuthMiddleware())
 	{
 		protected.POST("/tasks", h.createTask)
 		protected.PUT("/tasks/:id", h.updateTask)
 		protected.DELETE("/tasks/:id", h.deleteTask)
+
 		protected.POST("/tasks/:id/dependencies", h.createDependency)
 		protected.DELETE("/tasks/:id/dependencies/:dep_id", h.deleteDependency)
-		protected.PATCH("/tasks/:id/status", h.updateTaskStatus)
-		// Обновленные роуты (обращаются к конкретной папке)
+
 		protected.DELETE("/projects/:project_id/dependencies", h.clearDependencies)
 		protected.GET("/projects/:project_id/graph", h.getGraph)
 
+		// МАРШРУТ ДЛЯ КАНБАН-ДОСКИ
+		protected.PATCH("/tasks/:id/status", h.updateTaskStatus)
 	}
 
 	projectHandler := NewProjectHandler(h.projectService)
@@ -90,7 +95,10 @@ func (h *Handler) deleteTask(c *gin.Context) {
 }
 
 func (h *Handler) createDependency(c *gin.Context) {
-	var dep models.Dependency
+	// ИСПРАВЛЕНИЕ: используем анонимную структуру, чтобы не зависеть от models.Dependency
+	var dep struct {
+		DependsOnID int `json:"depends_on_id"`
+	}
 	c.ShouldBindJSON(&dep)
 	taskID, _ := strconv.Atoi(c.Param("id"))
 
@@ -146,7 +154,7 @@ func (h *Handler) updateTaskStatus(c *gin.Context) {
 		return
 	}
 
-	if err := h.taskService.UpdateTaskStatus(taskID, userID.(int), req.Status); err != nil {
+	if err := h.service.UpdateTaskStatus(taskID, userID.(int), req.Status); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
