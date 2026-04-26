@@ -36,6 +36,8 @@ func (h *Handler) InitRoutes() *gin.Engine {
 		// ВОТ ЭТА СТРОЧКА БЫЛА ПРОПУЩЕНА (Роут для обновления):
 		protected.PUT("/tasks/:id", h.updateTask)
 	}
+	projectHandler := NewProjectHandler(h.service.ProjectService) // Сейчас мы добавим это поле
+	projectHandler.RegisterRoutes(protected)
 
 	return r
 }

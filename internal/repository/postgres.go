@@ -11,9 +11,14 @@ type TaskRepository struct {
 }
 
 func NewTaskRepository(db *sql.DB) *TaskRepository {
-	// Enterprise-паттерн: Автоматическая миграция БД при старте сервиса
+	// 1. Создаем таблицу проектов
+	db.Exec(`CREATE TABLE IF NOT EXISTS projects (
+		id SERIAL PRIMARY KEY,
+		name VARCHAR(255) NOT NULL,
+		owner_id INTEGER NOT NULL
+	)`)
 
-	// 1. Создаем таблицу задач (с колонкой user_id)
+	// 2. Создаем или обновляем таблицу задач
 	db.Exec(`CREATE TABLE IF NOT EXISTS tasks (
 		id SERIAL PRIMARY KEY,
 		user_id INTEGER NOT NULL,
@@ -25,7 +30,11 @@ func NewTaskRepository(db *sql.DB) *TaskRepository {
 		priority_score FLOAT DEFAULT 0
 	)`)
 
-	// 2. Создаем таблицу зависимостей (связи графа)
+	// 3. Безопасно добавляем колонку project_id в существующую таблицу задач
+	// Если колонка уже есть, команда просто проигнорируется
+	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE`)
+
+	// 4. Таблица зависимостей
 	db.Exec(`CREATE TABLE IF NOT EXISTS dependencies (
 		task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
 		depends_on_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
@@ -163,4 +172,44 @@ func (r *TaskRepository) UpdateTask(t *models.Task) error {
 		WHERE id = $5 AND user_id = $6
 	`, t.Title, t.Opt, t.Real, t.Pess, t.ID, t.UserID)
 	return err
+}
+
+// --- ЛОГИКА ПРОЕКТОВ ---
+
+type Project struct {
+	ID      int    `json:"id"`
+	Name    string `json:"name"`
+	OwnerID int    `json:"owner_id"`
+}
+
+func (r *TaskRepository) GetUserProjects(userID int) ([]Project, error) {
+	rows, err := r.db.Query("SELECT id, name, owner_id FROM projects WHERE owner_id = $1 ORDER BY id ASC", userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var projects []Project
+	for rows.Next() {
+		var p Project
+		rows.Scan(&p.ID, &p.Name, &p.OwnerID)
+		projects = append(projects, p)
+	}
+
+	// Если проектов нет, создаем дефолтный "Мой первый проект"
+	if len(projects) == 0 {
+		var newID int
+		err := r.db.QueryRow("INSERT INTO projects (name, owner_id) VALUES ($1, $2) RETURNING id", "Мой первый проект", userID).Scan(&newID)
+		if err == nil {
+			projects = append(projects, Project{ID: newID, Name: "Мой первый проект", OwnerID: userID})
+		}
+	}
+
+	return projects, nil
+}
+
+func (r *TaskRepository) CreateProject(name string, ownerID int) (int, error) {
+	var id int
+	err := r.db.QueryRow("INSERT INTO projects (name, owner_id) VALUES ($1, $2) RETURNING id", name, ownerID).Scan(&id)
+	return id, err
 }
