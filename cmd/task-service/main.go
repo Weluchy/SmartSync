@@ -14,28 +14,36 @@ import (
 )
 
 func main() {
-	// 1. Инициализация инфраструктуры
+	// Подключение к Postgres
 	db, err := sql.Open("postgres", "postgres://user:password@127.0.0.1:5433/smartsync?sslmode=disable")
 	if err != nil {
-		log.Fatal("Postgres error:", err)
+		log.Fatal(err)
 	}
 	defer db.Close()
 
+	// Подключение к Redis
+	rdb := redis.NewClient(&redis.Options{Addr: "127.0.0.1:6379"})
+
+	// Подключение к NATS
 	nc, err := nats.Connect("nats://localhost:4222")
 	if err != nil {
-		log.Fatal("NATS error:", err)
+		log.Fatal(err)
 	}
 	defer nc.Close()
 
-	rdb := redis.NewClient(&redis.Options{Addr: "127.0.0.1:6379"})
+	// 1. Инициализация слоев БД
+	taskRepo := repository.NewTaskRepository(db)
+	projectRepo := repository.NewProjectRepository(db)
 
-	// 2. Сборка слоев приложения (Dependency Injection)
-	repo := repository.NewTaskRepository(db)
-	taskService := service.NewTaskService(repo, nc, rdb)
-	httpHandler := handler.NewHandler(taskService)
+	// 2. Инициализация бизнес-логики
+	taskService := service.NewTaskService(taskRepo, nc, rdb)
+	projectService := service.NewProjectService(projectRepo)
 
-	// 3. Запуск сервера
+	// 3. Сборка контроллера и запуск
+	httpHandler := handler.NewHandler(taskService, projectService)
+
 	router := httpHandler.InitRoutes()
-	log.Println("Task Service [Clean Architecture] запущен на порту 8080")
+
+	log.Println("Task Service [Модульный] запущен на порту 8080")
 	router.Run(":8080")
 }

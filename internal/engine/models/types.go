@@ -1,6 +1,5 @@
 package models
 
-// Структуры для математического движка
 type Task struct {
 	ID            int     `json:"id"`
 	Title         string  `json:"title"`

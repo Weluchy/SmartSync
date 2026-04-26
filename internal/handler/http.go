@@ -10,47 +10,60 @@ import (
 )
 
 type Handler struct {
-	service *service.TaskService
+	service        *service.TaskService
+	projectService *service.ProjectService
 }
 
-func NewHandler(s *service.TaskService) *Handler {
-	return &Handler{service: s}
+func NewHandler(ts *service.TaskService, ps *service.ProjectService) *Handler {
+	return &Handler{
+		service:        ts,
+		projectService: ps,
+	}
 }
 
 func (h *Handler) InitRoutes() *gin.Engine {
 	r := gin.Default()
 
-	// Защищенная группа роутов. Сюда нельзя попасть без токена!
+	r.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE, PUT")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+		c.Writer.Header().Set("Access-Control-Expose-Headers", "X-Cache")
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	})
+
 	protected := r.Group("/")
 	protected.Use(AuthMiddleware())
 	{
 		protected.POST("/tasks", h.createTask)
-		protected.POST("/tasks/:id/dependencies", h.createDependency)
-		protected.DELETE("/dependencies", h.clearDependencies)
-		protected.GET("/graph", h.getGraph)
-
-		// Роуты удаления
+		protected.PUT("/tasks/:id", h.updateTask)
 		protected.DELETE("/tasks/:id", h.deleteTask)
+		protected.POST("/tasks/:id/dependencies", h.createDependency)
 		protected.DELETE("/tasks/:id/dependencies/:dep_id", h.deleteDependency)
 
-		// ВОТ ЭТА СТРОЧКА БЫЛА ПРОПУЩЕНА (Роут для обновления):
-		protected.PUT("/tasks/:id", h.updateTask)
+		// Обновленные роуты (обращаются к конкретной папке)
+		protected.DELETE("/projects/:project_id/dependencies", h.clearDependencies)
+		protected.GET("/projects/:project_id/graph", h.getGraph)
 	}
-	projectHandler := NewProjectHandler(h.service.ProjectService) // Сейчас мы добавим это поле
+
+	projectHandler := NewProjectHandler(h.projectService)
 	projectHandler.RegisterRoutes(protected)
 
 	return r
 }
 
 func (h *Handler) createTask(c *gin.Context) {
-	userID, _ := c.Get("user_id") // Достаем ID пользователя из токена
+	userID, _ := c.Get("user_id")
 	var t models.Task
 	if err := c.ShouldBindJSON(&t); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-
-	t.UserID = userID.(int) // Присваиваем владельца задаче
+	t.UserID = userID.(int)
 
 	id, err := h.service.CreateTask(&t)
 	if err != nil {
@@ -60,55 +73,43 @@ func (h *Handler) createTask(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Задача создана", "id": id})
 }
 
-func (h *Handler) createDependency(c *gin.Context) {
+func (h *Handler) updateTask(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	taskID, _ := strconv.Atoi(c.Param("id"))
-	var dep models.Dependency
-	c.ShouldBindJSON(&dep)
+	var t models.Task
+	c.ShouldBindJSON(&t)
+	t.ID = taskID
+	t.UserID = userID.(int)
 
-	if err := h.service.CreateDependency(taskID, dep.DependsOnID, userID.(int)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	if err := h.service.UpdateTask(&t); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка обновления"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "Связь создана"})
-}
-
-func (h *Handler) clearDependencies(c *gin.Context) {
-	userID, _ := c.Get("user_id")
-
-	err := h.service.ClearDependencies(userID.(int))
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось сбросить граф"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Граф сброшен"})
-}
-
-func (h *Handler) getGraph(c *gin.Context) {
-	userID, _ := c.Get("user_id")
-	graph, fromCache, _ := h.service.GetGraph(c.Request.Context(), userID.(int))
-
-	if fromCache {
-		c.Header("X-Cache", "HIT")
-	} else {
-		c.Header("X-Cache", "MISS")
-	}
-	c.JSON(http.StatusOK, graph)
+	c.JSON(http.StatusOK, gin.H{"message": "Обновлено"})
 }
 
 func (h *Handler) deleteTask(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	taskID, _ := strconv.Atoi(c.Param("id"))
-
-	// Ловим параметр сшивания: если в URL есть ?heal=true, то heal будет равно true
 	heal := c.Query("heal") == "true"
 
 	if err := h.service.DeleteTask(taskID, userID.(int), heal); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось удалить задачу"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка удаления"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "Задача удалена"})
+	c.JSON(http.StatusOK, gin.H{"message": "Удалено"})
+}
+
+func (h *Handler) createDependency(c *gin.Context) {
+	var dep models.Dependency
+	c.ShouldBindJSON(&dep)
+	taskID, _ := strconv.Atoi(c.Param("id"))
+
+	if err := h.service.CreateDependency(taskID, dep.DependsOnID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Связь создана"})
 }
 
 func (h *Handler) deleteDependency(c *gin.Context) {
@@ -117,28 +118,29 @@ func (h *Handler) deleteDependency(c *gin.Context) {
 	depID, _ := strconv.Atoi(c.Param("dep_id"))
 
 	if err := h.service.DeleteDependency(taskID, depID, userID.(int)); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось удалить связь"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка удаления связи"})
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Связь удалена"})
 }
 
-func (h *Handler) updateTask(c *gin.Context) {
+func (h *Handler) clearDependencies(c *gin.Context) {
 	userID, _ := c.Get("user_id")
-	taskID, _ := strconv.Atoi(c.Param("id"))
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
 
-	var t models.Task
-	if err := c.ShouldBindJSON(&t); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат данных"})
-		return
+	h.service.ClearDependencies(projectID, userID.(int))
+	c.JSON(http.StatusOK, gin.H{"message": "Граф сброшен"})
+}
+
+func (h *Handler) getGraph(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
+
+	graph, fromCache, _ := h.service.GetGraph(c.Request.Context(), projectID, userID.(int))
+	if fromCache {
+		c.Header("X-Cache", "HIT")
+	} else {
+		c.Header("X-Cache", "MISS")
 	}
-
-	t.ID = taskID
-	t.UserID = userID.(int)
-
-	if err := h.service.UpdateTask(&t); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось обновить задачу"})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"message": "Задача обновлена"})
+	c.JSON(http.StatusOK, graph)
 }

@@ -21,6 +21,11 @@ func NewTaskService(repo *repository.TaskRepository, nc *nats.Conn, rdb *redis.C
 	return &TaskService{repo: repo, nc: nc, redis: rdb}
 }
 
+func (s *TaskService) triggerMathEngine(projectID int) {
+	s.redis.Del(context.Background(), fmt.Sprintf("smartsync:graph:project:%d", projectID))
+	s.nc.Publish("graph.updated", []byte(fmt.Sprintf(`{"project_id": %d}`, projectID)))
+}
+
 func (s *TaskService) CreateTask(t *models.Task) (int, error) {
 	if t.Opt == 0 {
 		t.Opt = 1
@@ -33,40 +38,58 @@ func (s *TaskService) CreateTask(t *models.Task) (int, error) {
 	}
 
 	id, err := s.repo.CreateTask(t)
-	if err != nil {
-		return 0, err
+	if err == nil {
+		s.triggerMathEngine(t.ProjectID)
 	}
-
-	// МГНОВЕННАЯ ИНВАЛИДАЦИЯ КЭША
-	s.redis.Del(context.Background(), fmt.Sprintf("smartsync:graph:user:%d", t.UserID))
-
-	payload := fmt.Sprintf(`{"task_id": %d, "user_id": %d}`, id, t.UserID)
-	s.nc.Publish("task.created", []byte(payload))
-	return id, nil
+	return id, err
 }
 
-func (s *TaskService) CreateDependency(taskID, dependsOnID, userID int) error {
+func (s *TaskService) UpdateTask(t *models.Task) error {
+	pid, _ := s.repo.GetProjectIDByTask(t.ID)
+	err := s.repo.UpdateTask(t)
+	if err == nil {
+		s.triggerMathEngine(pid)
+	}
+	return err
+}
+
+func (s *TaskService) DeleteTask(taskID, userID int, heal bool) error {
+	pid, _ := s.repo.GetProjectIDByTask(taskID)
+	err := s.repo.DeleteTask(taskID, userID, heal)
+	if err == nil {
+		s.triggerMathEngine(pid)
+	}
+	return err
+}
+
+func (s *TaskService) CreateDependency(taskID, dependsOnID int) error {
+	pid, _ := s.repo.GetProjectIDByTask(taskID)
 	err := s.repo.CreateDependency(taskID, dependsOnID)
 	if err == nil {
-		// МГНОВЕННАЯ ИНВАЛИДАЦИЯ КЭША
-		s.redis.Del(context.Background(), fmt.Sprintf("smartsync:graph:user:%d", userID))
-		s.nc.Publish("graph.updated", []byte(fmt.Sprintf(`{"user_id": %d}`, userID)))
+		s.triggerMathEngine(pid)
 	}
 	return err
 }
 
-func (s *TaskService) ClearDependencies(userID int) error {
-	err := s.repo.ClearDependencies(userID)
+func (s *TaskService) DeleteDependency(taskID, dependsOnID, userID int) error {
+	pid, _ := s.repo.GetProjectIDByTask(taskID)
+	err := s.repo.DeleteDependency(taskID, dependsOnID, userID)
 	if err == nil {
-		// МГНОВЕННАЯ ИНВАЛИДАЦИЯ КЭША
-		s.redis.Del(context.Background(), fmt.Sprintf("smartsync:graph:user:%d", userID))
-		s.nc.Publish("graph.updated", []byte(fmt.Sprintf(`{"user_id": %d}`, userID)))
+		s.triggerMathEngine(pid)
 	}
 	return err
 }
 
-func (s *TaskService) GetGraph(ctx context.Context, userID int) (*models.GraphData, bool, error) {
-	cacheKey := fmt.Sprintf("smartsync:graph:user:%d", userID)
+func (s *TaskService) ClearDependencies(projectID, userID int) error {
+	err := s.repo.ClearDependencies(projectID, userID)
+	if err == nil {
+		s.triggerMathEngine(projectID)
+	}
+	return err
+}
+
+func (s *TaskService) GetGraph(ctx context.Context, projectID, userID int) (*models.GraphData, bool, error) {
+	cacheKey := fmt.Sprintf("smartsync:graph:project:%d", projectID)
 	val, err := s.redis.Get(ctx, cacheKey).Result()
 	if err == nil {
 		var graph models.GraphData
@@ -74,33 +97,6 @@ func (s *TaskService) GetGraph(ctx context.Context, userID int) (*models.GraphDa
 		return &graph, true, nil
 	}
 
-	graph, err := s.repo.GetGraphData(userID)
+	graph, err := s.repo.GetGraphData(projectID, userID)
 	return graph, false, err
-}
-
-func (s *TaskService) DeleteTask(taskID, userID int, heal bool) error {
-	err := s.repo.DeleteTask(taskID, userID, heal)
-	if err == nil {
-		s.redis.Del(context.Background(), fmt.Sprintf("smartsync:graph:user:%d", userID))
-		s.nc.Publish("graph.updated", []byte(fmt.Sprintf(`{"user_id": %d}`, userID)))
-	}
-	return err
-}
-
-func (s *TaskService) DeleteDependency(taskID, dependsOnID, userID int) error {
-	err := s.repo.DeleteDependency(taskID, dependsOnID, userID)
-	if err == nil {
-		s.redis.Del(context.Background(), fmt.Sprintf("smartsync:graph:user:%d", userID))
-		s.nc.Publish("graph.updated", []byte(fmt.Sprintf(`{"user_id": %d}`, userID)))
-	}
-	return err
-}
-
-func (s *TaskService) UpdateTask(t *models.Task) error {
-	err := s.repo.UpdateTask(t)
-	if err == nil {
-		s.redis.Del(context.Background(), fmt.Sprintf("smartsync:graph:user:%d", t.UserID))
-		s.nc.Publish("graph.updated", []byte(fmt.Sprintf(`{"user_id": %d}`, t.UserID)))
-	}
-	return err
 }

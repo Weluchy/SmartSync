@@ -16,12 +16,10 @@ var jwtSecret = []byte("smartsync_diploma_secret_key_2026")
 func main() {
 	r := gin.Default()
 
-	// CORS
 	r.Use(func(c *gin.Context) {
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE, PUT")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
 			return
@@ -29,31 +27,34 @@ func main() {
 		c.Next()
 	})
 
-	// 1. Маршруты авторизации (прокидываем на порт 8081 БЕЗ проверки токена)
+	// Открытые маршруты улетают в Auth Service
 	authProxy := reverseProxy("http://localhost:8081")
 	r.POST("/register", authProxy)
 	r.POST("/login", authProxy)
 
-	// 2. Маршруты задач (прокидываем на порт 8080 С ПРОВЕРКОЙ токена)
+	// Защищенные маршруты улетают в Task Service
 	taskProxy := reverseProxy("http://localhost:8080")
 	protected := r.Group("/")
 	protected.Use(authMiddleware())
 	{
+		// Маршруты Задач
 		protected.POST("/tasks", taskProxy)
-		protected.POST("/tasks/:id/dependencies", taskProxy)
-		protected.DELETE("/dependencies", taskProxy)
-		protected.GET("/graph", taskProxy)
 		protected.PUT("/tasks/:id", taskProxy)
-		// НОВЫЕ МАРШРУТЫ ДЛЯ УДАЛЕНИЯ:
 		protected.DELETE("/tasks/:id", taskProxy)
+		protected.POST("/tasks/:id/dependencies", taskProxy)
 		protected.DELETE("/tasks/:id/dependencies/:dep_id", taskProxy)
+
+		// Маршруты Проектов
+		protected.GET("/projects", taskProxy)
+		protected.POST("/projects", taskProxy)
+		protected.DELETE("/projects/:project_id/dependencies", taskProxy)
+		protected.GET("/projects/:project_id/graph", taskProxy)
 	}
 
 	log.Println("API Gateway запущен на порту 8000")
 	r.Run(":8000")
 }
 
-// Middleware для проверки JWT на уровне шлюза
 func authMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
@@ -71,8 +72,6 @@ func authMiddleware() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Неверный токен"})
 			return
 		}
-
-		// Если токен ок, Gateway пропускает запрос дальше
 		c.Next()
 	}
 }
