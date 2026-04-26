@@ -169,3 +169,31 @@ func (r *TaskRepository) GetGraphData(projectID, userID int) (*models.GraphData,
 	}
 	return graph, nil
 }
+
+// GetTasksByProject возвращает список всех задач конкретного проекта
+func (r *TaskRepository) GetTasksByProject(projectID, userID int) ([]models.Task, error) {
+	// Проверяем, есть ли у пользователя доступ к проекту (хотя бы на чтение)
+	if err := r.CheckAccess(projectID, userID, false); err != nil {
+		return nil, err
+	}
+
+	rows, err := r.db.Query(`
+		SELECT id, title, opt, real, pess, user_id, project_id, status, duration_hours, priority_score 
+		FROM tasks 
+		WHERE project_id = $1`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tasks []models.Task
+	for rows.Next() {
+		var t models.Task
+		err := rows.Scan(&t.ID, &t.Title, &t.Opt, &t.Real, &t.Pess, &t.UserID, &t.ProjectID, &t.Status, &t.DurationHours, &t.PriorityScore)
+		if err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, t)
+	}
+	return tasks, nil
+}

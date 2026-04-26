@@ -30,23 +30,20 @@ func (h *Handler) InitRoutes() *gin.Engine {
 	protected := r.Group("/")
 	protected.Use(AuthMiddleware())
 	{
+		// Управление задачами
 		protected.POST("/tasks", h.createTask)
 		protected.PUT("/tasks/:id", h.updateTask)
 		protected.DELETE("/tasks/:id", h.deleteTask)
+		protected.PATCH("/tasks/:id/status", h.updateTaskStatus) // Для Канбан-доски
 
+		// Зависимости
 		protected.POST("/tasks/:id/dependencies", h.createDependency)
 		protected.DELETE("/tasks/:id/dependencies/:dep_id", h.deleteDependency)
-
 		protected.DELETE("/projects/:project_id/dependencies", h.clearDependencies)
-		protected.GET("/projects/:project_id/graph", h.getGraph)
 
-		// МАРШРУТ ДЛЯ КАНБАН-ДОСКИ
-		protected.PATCH("/tasks/:id/status", h.updateTaskStatus)
-		api := r.Group("/api")
-		{
-			api.GET("/projects/:project_id/tasks", h.getProjectTasks) // Добавь эту строку
-			api.PATCH("/tasks/:id/status", h.updateTask)
-		}
+		// Проекты
+		protected.GET("/projects/:project_id/graph", h.getGraph)
+		protected.GET("/projects/:project_id/tasks", h.getProjectTasks)
 	}
 
 	projectHandler := NewProjectHandler(h.projectService)
@@ -73,6 +70,7 @@ func (h *Handler) createTask(c *gin.Context) {
 }
 
 func (h *Handler) updateTask(c *gin.Context) {
+	userID, _ := c.Get("user_id") // Добавить эту строку
 	taskID, _ := strconv.Atoi(c.Param("id"))
 	var t models.Task
 	if err := c.ShouldBindJSON(&t); err != nil {
@@ -80,6 +78,8 @@ func (h *Handler) updateTask(c *gin.Context) {
 		return
 	}
 	t.ID = taskID
+	t.UserID = userID.(int) // Установить ID пользователя
+
 	if err := h.service.UpdateTask(&t); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -115,8 +115,11 @@ func (h *Handler) createDependency(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Связь создана"})
 }
 func (h *Handler) getProjectTasks(c *gin.Context) {
+	userID, _ := c.Get("user_id") // Получаем ID пользователя из контекста
 	projectID, _ := strconv.Atoi(c.Param("project_id"))
-	tasks, err := h.service.GetTasksByProject(projectID)
+
+	// Передаем userID для проверки прав доступа
+	tasks, err := h.service.GetTasksByProject(projectID, userID.(int))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка загрузки задач"})
 		return

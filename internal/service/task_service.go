@@ -105,3 +105,6 @@ func (s *TaskService) GetGraph(ctx context.Context, projectID, userID int) (*mod
 func (s *TaskService) UpdateTaskStatus(taskID, userID int, status string) error {
 	return s.repo.UpdateTaskStatus(taskID, userID, status)
 }
+func (s *TaskService) GetTasksByProject(projectID, userID int) ([]models.Task, error) {
+	return s.repo.GetTasksByProject(projectID, userID)
+}
