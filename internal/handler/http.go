@@ -79,6 +79,10 @@ func (h *Handler) updateTask(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка обновления"})
 		return
 	}
+	if err := c.ShouldBindJSON(&t); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат данных"})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "Обновлено"})
 }
 
@@ -106,6 +110,7 @@ func (h *Handler) createDependency(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "Связь создана"})
 }
 

@@ -17,5 +17,8 @@ export const api = {
     return data;
   },
   get(e) { return this.request(e); },
-  post(e, b) { return this.request(e, { method: 'POST', body: JSON.stringify(b) }); }
+  post(e, b) { return this.request(e, { method: 'POST', body: JSON.stringify(b) }); },
+  put(e, b) { return this.request(e, { method: 'PUT', body: JSON.stringify(b) }); },
+  patch(e, b) { return this.request(e, { method: 'PATCH', body: JSON.stringify(b) }); },
+  delete(e) { return this.request(e, { method: 'DELETE' }); }
 };
