@@ -2,258 +2,251 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <title>SmartSync | Enterprise Edition</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartSync - Управление проектами</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 </head>
-<body class="bg-gray-100 font-sans">
+<body class="bg-gray-50 h-screen flex overflow-hidden font-sans">
 
-    <div id="authScreen" class="min-h-screen flex items-center justify-center hidden">
-        <div class="bg-white p-8 rounded-xl shadow-lg w-96 border-t-4 border-blue-600">
-            <h1 class="text-2xl font-black text-center text-gray-800 mb-6">SmartSync Login</h1>
-            <div class="space-y-4">
-                <input type="text" id="username" placeholder="Логин" class="w-full border p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <input type="password" id="password" placeholder="Пароль" class="w-full border p-3 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500">
-                <button onclick="handleAuth('login')" class="w-full bg-blue-600 text-white p-3 rounded-lg font-bold hover:bg-blue-700">Войти</button>
-                <button onclick="handleAuth('register')" class="w-full text-blue-600 font-medium hover:underline text-sm">Нет аккаунта? Создать</button>
+    <div id="authScreen" class="absolute inset-0 bg-gray-900 z-50 flex items-center justify-center">
+        <div class="bg-white p-8 rounded-xl shadow-2xl w-96">
+            <h1 class="text-3xl font-black text-center text-blue-600 mb-6">SmartSync</h1>
+            <div class="flex gap-2 mb-6">
+                <button onclick="setAuthMode('login')" id="tabLogin" class="flex-1 py-2 font-bold border-b-2 border-blue-600 text-blue-600">Вход</button>
+                <button onclick="setAuthMode('register')" id="tabReg" class="flex-1 py-2 font-bold border-b-2 border-transparent text-gray-500">Регистрация</button>
             </div>
-            <p id="authError" class="text-red-500 text-xs mt-4 text-center"></p>
+            <form id="authForm" class="flex flex-col gap-4">
+                <input type="text" id="a_user" placeholder="Имя пользователя" class="border p-3 rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" required>
+                <input type="password" id="a_pass" placeholder="Пароль" class="border p-3 rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" required>
+                <button type="submit" class="bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition mt-2 shadow-lg">Войти</button>
+            </form>
         </div>
     </div>
 
-    <div id="mainScreen" class="hidden p-8">
-        <div class="max-w-7xl mx-auto flex justify-between items-center mb-8">
-            <div>
-                <h1 class="text-3xl font-black text-blue-600">SmartSync</h1>
-                <p id="userInfo" class="text-gray-500 text-sm font-medium"></p>
+    <aside class="w-64 bg-white border-r border-gray-200 flex flex-col hidden" id="sidebar">
+        <div class="p-6 border-b border-gray-100 flex justify-between items-center">
+            <h2 class="text-xl font-black text-gray-800">Проекты</h2>
+            <button onclick="logout()" class="text-xs text-red-500 font-bold hover:underline">Выход</button>
+        </div>
+        <div class="p-4">
+            <form id="projectForm" class="flex gap-2">
+                <input type="text" id="p_name" placeholder="Новый проект..." class="border p-2 rounded w-full text-sm outline-none focus:border-blue-500" required>
+                <button type="submit" class="bg-gray-800 text-white px-3 rounded font-bold hover:bg-gray-700">+</button>
+            </form>
+        </div>
+        <ul id="projectList" class="flex-1 overflow-y-auto px-2 space-y-1">
+            </ul>
+    </aside>
+
+    <main class="flex-1 flex flex-col relative hidden" id="mainApp">
+        <header class="bg-white border-b border-gray-200 p-4 flex gap-6 items-start shadow-sm z-10">
+            <form id="taskForm" class="flex gap-2 items-center border-r pr-6 border-gray-200">
+                <input type="text" id="t_title" placeholder="Название задачи" class="border p-2 rounded w-48 text-sm" required>
+                <input type="number" id="t_opt" placeholder="Опт (ч)" class="border p-2 rounded w-20 text-sm" required>
+                <input type="number" id="t_real" placeholder="Реал (ч)" class="border p-2 rounded w-20 text-sm" required>
+                <input type="number" id="t_pess" placeholder="Песс (ч)" class="border p-2 rounded w-20 text-sm" required>
+                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded text-sm font-bold shadow hover:bg-blue-700 transition">Добавить</button>
+            </form>
+
+            <form id="depForm" class="flex gap-2 items-center border-r pr-6 border-gray-200">
+                <input type="number" id="d_parent" placeholder="ID (От кого зависит)" class="border p-2 rounded w-40 text-sm" required>
+                <input type="number" id="d_child" placeholder="ID (Кто зависит)" class="border p-2 rounded w-40 text-sm" required>
+                <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded text-sm font-bold shadow hover:bg-green-700 transition">Связать</button>
+            </form>
+
+            <button onclick="resetDeps()" class="bg-gray-100 text-gray-700 px-4 py-2 rounded text-sm font-bold shadow-sm hover:bg-gray-200 transition ml-auto">
+                Сбросить стрелки
+            </button>
+        </header>
+
+        <div id="editMenu" class="absolute top-24 left-6 bg-white p-4 rounded-xl shadow-xl border border-gray-200 hidden z-20 w-64">
+            <h3 class="font-bold text-sm mb-3 text-gray-700 border-b pb-2">Редактировать задачу</h3>
+            <input type="text" id="e_title" class="w-full border p-2 rounded mb-3 text-sm focus:border-blue-500 outline-none" placeholder="Название">
+            <div class="grid grid-cols-3 gap-2 mb-3">
+                <div><label class="text-xs text-gray-500">Опт</label><input type="number" id="e_opt" class="border p-1.5 w-full rounded text-sm text-center"></div>
+                <div><label class="text-xs text-gray-500">Реал</label><input type="number" id="e_real" class="border p-1.5 w-full rounded text-sm text-center"></div>
+                <div><label class="text-xs text-gray-500">Песс</label><input type="number" id="e_pess" class="border p-1.5 w-full rounded text-sm text-center"></div>
             </div>
-            <button onclick="logout()" class="bg-gray-200 text-gray-700 px-4 py-2 rounded-lg hover:bg-gray-300 transition">Выйти</button>
+            <div class="flex gap-2">
+                <button onclick="saveEdit()" class="bg-blue-600 text-white px-3 py-2 flex-1 rounded text-sm font-bold shadow">Сохранить</button>
+                <button onclick="closeEdit()" class="bg-gray-100 text-gray-700 px-3 py-2 rounded text-sm font-bold">Отмена</button>
+            </div>
         </div>
 
-        <div class="grid grid-cols-12 gap-8">
-            <div class="col-span-4 space-y-6">
-                <div class="bg-white p-6 rounded-xl shadow-sm border-t-4 border-blue-500">
-                    <h2 class="font-bold mb-4">Новая задача</h2>
-                    <form id="taskForm" class="space-y-4">
-                        <input type="text" id="t_title" placeholder="Название..." required class="w-full border p-2.5 rounded-lg">
-                        <div class="grid grid-cols-3 gap-2 text-center">
-                            <input type="number" id="t_opt" placeholder="O" class="border p-2 rounded">
-                            <input type="number" id="t_real" placeholder="M" class="border p-2 rounded">
-                            <input type="number" id="t_pess" placeholder="P" class="border p-2 rounded">
-                        </div>
-                        <button type="submit" class="w-full bg-blue-600 text-white p-2.5 rounded-lg font-bold">Добавить</button>
-                    </form>
-                </div>
-                <div class="bg-white p-6 rounded-xl shadow-sm border-t-4 border-emerald-500">
-                    <h2 class="font-bold mb-4">Создать зависимость</h2>
-                    <form id="depForm" class="flex gap-2">
-                        <input type="number" id="d_child" placeholder="ID кто ждет" class="w-1/2 border p-2 rounded">
-                        <input type="number" id="d_parent" placeholder="ID родитель" class="w-1/2 border p-2 rounded">
-                        <button type="submit" class="bg-emerald-600 text-white px-4 rounded font-bold">+</button>
-                    </form>
-                </div>
-            </div>
-            <div class="col-span-8 bg-white p-6 rounded-xl shadow-sm relative">
-                <div id="mynetwork" style="height: 500px;"></div>
-                <button onclick="resetDeps()" class="absolute bottom-4 left-4 bg-red-50 text-red-600 px-3 py-1 rounded text-xs font-bold border border-red-200">Сбросить граф</button>
-            </div>
-            <div id="deleteMenu" class="absolute top-4 right-4 flex flex-col gap-2 hidden z-10">
-                <button onclick="deleteSelectedNode(false)" class="bg-red-600 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-red-700 transition">
-                 🗑 Удалить (Разорвать связи)
-                </button>
-                <button onclick="deleteSelectedNode(true)" class="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-orange-600 transition">
-                 🔗 Удалить (Сшить края)
-                </button>
-            </div>
-            
-            <div id="editMenu" class="absolute top-4 left-4 bg-white p-4 rounded-xl shadow-lg border border-gray-200 hidden z-10 w-64">
-    <h3 class="font-bold text-sm mb-2 text-gray-700">Редактировать задачу</h3>
-    <input type="text" id="e_title" class="w-full border p-1.5 rounded mb-2 text-sm" placeholder="Название">
-    <div class="grid grid-cols-3 gap-1 mb-2">
-        <input type="number" id="e_opt" class="border p-1 rounded text-xs text-center" placeholder="O">
-        <input type="number" id="e_real" class="border p-1 rounded text-xs text-center" placeholder="M">
-        <input type="number" id="e_pess" class="border p-1 rounded text-xs text-center" placeholder="P">
-    </div>
-    <div class="flex gap-2">
-        <button onclick="saveEdit()" class="bg-blue-600 text-white px-2 py-1.5 flex-1 rounded text-xs font-bold">Сохранить</button>
-        <button onclick="closeEdit()" class="bg-gray-200 text-gray-700 px-2 py-1.5 rounded text-xs font-bold">Отмена</button>
-    </div>
-</div>
+        <div id="deleteMenu" class="absolute top-24 right-6 flex flex-col gap-2 hidden z-20">
+            <button onclick="deleteSelectedNode(false)" class="bg-red-600 text-white px-4 py-3 rounded-lg text-sm font-bold shadow-lg hover:bg-red-700 transition flex items-center justify-between">
+                <span>🗑 Удалить (Разорвать)</span>
+            </button>
+            <button onclick="deleteSelectedNode(true)" class="bg-orange-500 text-white px-4 py-3 rounded-lg text-sm font-bold shadow-lg hover:bg-orange-600 transition flex items-center justify-between">
+                <span>🔗 Удалить (Сшить края)</span>
+            </button>
         </div>
-    </div>
+
+        <div id="mynetwork" class="flex-1 bg-gray-50"></div>
+    </main>
 
     <script>
-        const GATEWAY = 'http://localhost:8000';
+        const GATEWAY = "http://localhost:8000";
         let token = localStorage.getItem('token');
+        let authMode = 'login';
+        let currentProjectId = null;
+        let network = null;
 
-        function checkSession() {
-            if (!token) {
-                document.getElementById('authScreen').classList.remove('hidden');
-                document.getElementById('mainScreen').classList.add('hidden');
-            } else {
-                document.getElementById('authScreen').classList.add('hidden');
-                document.getElementById('mainScreen').classList.remove('hidden');
-                document.getElementById('userInfo').innerText = `Сессия активна`;
-                loadGraph();
-            }
+        // --- АВТОРИЗАЦИЯ ---
+        function setAuthMode(mode) {
+            authMode = mode;
+            document.getElementById('tabLogin').className = mode === 'login' ? "flex-1 py-2 font-bold border-b-2 border-blue-600 text-blue-600" : "flex-1 py-2 font-bold border-b-2 border-transparent text-gray-500";
+            document.getElementById('tabReg').className = mode === 'register' ? "flex-1 py-2 font-bold border-b-2 border-blue-600 text-blue-600" : "flex-1 py-2 font-bold border-b-2 border-transparent text-gray-500";
+            document.querySelector('#authForm button').innerText = mode === 'login' ? "Войти" : "Зарегистрироваться";
         }
 
-        async function handleAuth(type) {
-            const user = document.getElementById('username').value;
-            const pass = document.getElementById('password').value;
-            try {
-                const res = await fetch(`${GATEWAY}/${type}`, {
-                    method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({username: user, password: pass})
-                });
-                const data = await res.json();
-                if (data.token) {
-                    localStorage.setItem('token', data.token);
-                    token = data.token;
-                    checkSession();
-                } else if (type === 'register') {
-                    alert("Успешно! Теперь войдите.");
+        document.getElementById('authForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const res = await fetch(`${GATEWAY}/${authMode}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    username: document.getElementById('a_user').value,
+                    password: document.getElementById('a_pass').value
+                })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                if (authMode === 'register') {
+                    alert('Успешно! Теперь войдите.');
+                    setAuthMode('login');
                 } else {
-                    document.getElementById('authError').innerText = data.error || "Ошибка";
+                    token = data.token;
+                    localStorage.setItem('token', token);
+                    checkSession();
                 }
-            } catch (e) { console.error(e); }
-        }
+            } else { alert(data.error); }
+        };
 
         function logout() {
             localStorage.removeItem('token');
-            location.reload();
+            token = null;
+            checkSession();
         }
 
-        async function loadGraph() {
-            const res = await fetch(`${GATEWAY}/graph`, {
-                headers: {'Authorization': `Bearer ${token}`}
+        async function checkSession() {
+            if (token) {
+                document.getElementById('authScreen').classList.add('hidden');
+                document.getElementById('sidebar').classList.remove('hidden');
+                document.getElementById('mainApp').classList.remove('hidden');
+                await loadProjects();
+            } else {
+                document.getElementById('authScreen').classList.remove('hidden');
+                document.getElementById('sidebar').classList.add('hidden');
+                document.getElementById('mainApp').classList.add('hidden');
+            }
+        }
+
+        // --- ПРОЕКТЫ ---
+        document.getElementById('projectForm').onsubmit = async (e) => {
+            e.preventDefault();
+            await fetch(`${GATEWAY}/projects`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+                body: JSON.stringify({ name: document.getElementById('p_name').value })
             });
+            e.target.reset();
+            loadProjects();
+        };
+
+        async function loadProjects() {
+            const res = await fetch(`${GATEWAY}/projects`, { headers: {'Authorization': `Bearer ${token}`} });
             if (res.status === 401) return logout();
-            const data = await res.json();
+            const projects = await res.json();
             
-      
-            const nodes = new vis.DataSet(data.nodes ? data.nodes.map(n => ({
-                id: n.id, 
-                label: `ID:${n.id}\n${n.title}\n${n.priority_score.toFixed(1)}`,
-                color: n.priority_score > n.duration_hours ? '#fca5a5' : '#bfdbfe',
-                shape: 'box'
-            })) : []);
+            const list = document.getElementById('projectList');
+            list.innerHTML = '';
             
-            const edges = new vis.DataSet(data.edges ? data.edges.map(e => ({from: e.from, to: e.to, arrows: 'to'})) : []);
-
-            // Сохраняем сеть в глобальную переменную
-            window.network = new vis.Network(document.getElementById('mynetwork'), {nodes, edges}, {
-                layout: {hierarchical: {direction: 'LR'}},
-                interaction: { hover: true, multiselect: false }
+            projects.forEach(p => {
+                const li = document.createElement('li');
+                li.className = `p-3 rounded-lg cursor-pointer font-medium text-sm transition ${currentProjectId === p.id ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-100'}`;
+                li.innerText = p.name;
+                li.onclick = () => selectProject(p.id);
+                list.appendChild(li);
             });
 
-            // Обработка выделения узла
-            window.network.on("selectNode", function (params) {
-                document.getElementById('deleteMenu').classList.remove('hidden');
-                
-                // Находим данные выделенного узла из графа
-                const nodeId = params.nodes[0];
-                // В data.nodes лежат сырые данные с бэкенда
-                const nodeData = data.nodes.find(n => n.id === nodeId); 
-                
-                if (nodeData) {
-                    document.getElementById('editMenu').classList.remove('hidden');
-                    document.getElementById('e_title').value = nodeData.title;
-                    document.getElementById('e_opt').value = nodeData.opt;
-                    document.getElementById('e_real').value = nodeData.real;
-                    document.getElementById('e_pess').value = nodeData.pess;
-                }
-            });
-            window.network.on("deselectNode", function () {
-                document.getElementById('deleteMenu').classList.add('hidden');
-                document.getElementById('editMenu').classList.add('hidden');
-            });
+            if (projects.length > 0 && !currentProjectId) {
+                selectProject(projects[0].id);
+            } else if (projects.length > 0) {
+                selectProject(currentProjectId); // Обновляем выделение
+            }
         }
 
+        function selectProject(id) {
+            currentProjectId = id;
+            loadProjects(); // Перерисовываем список для подсветки активного
+            loadGraph();
+        }
+
+        // --- ЗАДАЧИ И ГРАФ ---
         document.getElementById('taskForm').onsubmit = async (e) => {
             e.preventDefault();
+            if(!currentProjectId) return alert("Выберите проект!");
             await fetch(`${GATEWAY}/tasks`, {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
                 body: JSON.stringify({
+                    project_id: currentProjectId, // ТЕПЕРЬ ПРИВЯЗЫВАЕМ К ПРОЕКТУ!
                     title: document.getElementById('t_title').value,
                     opt: parseInt(document.getElementById('t_opt').value) || 1,
                     real: parseInt(document.getElementById('t_real').value) || 1,
                     pess: parseInt(document.getElementById('t_pess').value) || 1
                 })
             });
-            
-            // Очищаем форму, чтобы было удобно вводить следующую задачу
             e.target.reset();
-            
-            // Ждем пересчета от Math Engine перед загрузкой графа
             setTimeout(loadGraph, 400); 
         };
 
-        // 1. Функция создания зависимости
         document.getElementById('depForm').onsubmit = async (e) => {
             e.preventDefault();
             const taskId = document.getElementById('d_child').value;
             const dependsOnId = document.getElementById('d_parent').value;
-            
             await fetch(`${GATEWAY}/tasks/${taskId}/dependencies`, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json', 
-                    'Authorization': `Bearer ${token}`
-                },
+                headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
                 body: JSON.stringify({ depends_on_id: parseInt(dependsOnId) })
             });
-            
-            // Очищаем форму и обновляем граф
             e.target.reset();
-            setTimeout(loadGraph, 400); // Ждем пересчета от Math Engine
+            setTimeout(loadGraph, 400); 
         };
 
-        // 2. Функция сброса графа
         async function resetDeps() {
-            if (!confirm("Удалить все связи? Задачи останутся.")) return;
-            
-            await fetch(`${GATEWAY}/dependencies`, { 
+            if (!currentProjectId || !confirm("Удалить все связи в этом проекте?")) return;
+            await fetch(`${GATEWAY}/projects/${currentProjectId}/dependencies`, { // СБРОС ТОЛЬКО В ПРОЕКТЕ
                 method: 'DELETE',
                 headers: {'Authorization': `Bearer ${token}`} 
             });
-            
             setTimeout(loadGraph, 400); 
         }
 
-        
-        // Глобальная функция удаления с параметром heal (сшивать или нет)
+        // --- УДАЛЕНИЕ И РЕДАКТИРОВАНИЕ ---
         window.deleteSelectedNode = async (heal) => {
-            const actionText = heal ? "Удалить задачу и связать ее соседей напрямую?" : "Удалить задачу и разорвать все ее связи?";
+            const actionText = heal ? "Удалить и сшить соседей напрямую?" : "Разорвать связи и удалить?";
             if (!confirm(actionText)) return;
-            
             const selectedNodes = window.network.getSelectedNodes();
             if (selectedNodes.length === 0) return;
             
-            const taskId = selectedNodes[0];
-            
-            // Отправляем запрос с параметром heal
-            await fetch(`${GATEWAY}/tasks/${taskId}?heal=${heal}`, {
+            await fetch(`${GATEWAY}/tasks/${selectedNodes[0]}?heal=${heal}`, {
                 method: 'DELETE',
                 headers: {'Authorization': `Bearer ${token}`}
             });
-            
             document.getElementById('deleteMenu').classList.add('hidden');
             setTimeout(loadGraph, 400); 
         };
 
-        window.closeEdit = () => {
-            document.getElementById('editMenu').classList.add('hidden');
-        };
+        window.closeEdit = () => document.getElementById('editMenu').classList.add('hidden');
 
         window.saveEdit = async () => {
             const selectedNodes = window.network.getSelectedNodes();
             if (selectedNodes.length === 0) return;
             
-            const taskId = selectedNodes[0];
-            await fetch(`${GATEWAY}/tasks/${taskId}`, {
+            await fetch(`${GATEWAY}/tasks/${selectedNodes[0]}`, {
                 method: 'PUT',
                 headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
                 body: JSON.stringify({
@@ -263,11 +256,67 @@
                     pess: parseInt(document.getElementById('e_pess').value)
                 })
             });
-            
             closeEdit();
             setTimeout(loadGraph, 400); 
         };
 
+        // --- ОТРИСОВКА ГРАФА ---
+        let currentGraphData = null;
+
+        async function loadGraph() {
+            if (!currentProjectId) return;
+            // ЗАПРАШИВАЕМ ГРАФ ТОЛЬКО ДЛЯ ВЫБРАННОГО ПРОЕКТА
+            const res = await fetch(`${GATEWAY}/projects/${currentProjectId}/graph`, { headers: {'Authorization': `Bearer ${token}`} });
+            const data = await res.json();
+            currentGraphData = data;
+
+            const nodes = new vis.DataSet(data.nodes?.map(t => ({
+                id: t.id,
+                label: `[${t.id}] ${t.title}\nPrior: ${t.priority_score.toFixed(1)}h`,
+                shape: 'box',
+                color: { background: '#ffffff', border: '#cbd5e1' },
+                font: { size: 14, color: '#1e293b', face: 'system-ui' },
+                margin: 10,
+                shadow: true
+            })) || []);
+
+            const edges = new vis.DataSet(data.edges?.map(e => ({
+                from: e.from,
+                to: e.to,
+                arrows: 'to',
+                color: { color: '#94a3b8' },
+                smooth: { type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.4 }
+            })) || []);
+
+            if (network) network.destroy(); // Удаляем старый граф перед отрисовкой нового
+
+            network = new vis.Network(document.getElementById('mynetwork'), {nodes, edges}, {
+                layout: { hierarchical: { direction: 'LR', sortMethod: 'directed', levelSeparation: 200 } },
+                physics: false,
+                interaction: { hover: true, multiselect: false }
+            });
+
+            network.on("selectNode", function (params) {
+                document.getElementById('deleteMenu').classList.remove('hidden');
+                const nodeId = params.nodes[0];
+                const nodeData = currentGraphData.nodes.find(n => n.id === nodeId); 
+                
+                if (nodeData) {
+                    document.getElementById('editMenu').classList.remove('hidden');
+                    document.getElementById('e_title').value = nodeData.title;
+                    document.getElementById('e_opt').value = nodeData.opt;
+                    document.getElementById('e_real').value = nodeData.real;
+                    document.getElementById('e_pess').value = nodeData.pess;
+                }
+            });
+
+            network.on("deselectNode", function () {
+                document.getElementById('deleteMenu').classList.add('hidden');
+                document.getElementById('editMenu').classList.add('hidden');
+            });
+        }
+
+        // Запуск
         checkSession();
     </script>
 </body>
