@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import PropTypes from 'prop-types'; // Импорт
 import { X } from 'lucide-react';
 
 export default function TaskModal({ isOpen, onClose, onCreate, projectId }) {
@@ -14,7 +15,6 @@ export default function TaskModal({ isOpen, onClose, onCreate, projectId }) {
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    // Преобразуем строки в числа перед отправкой
     onCreate({
       ...formData,
       opt: parseFloat(formData.opt),
@@ -98,3 +98,11 @@ export default function TaskModal({ isOpen, onClose, onCreate, projectId }) {
     </div>
   );
 }
+
+// Добавили валидацию пропсов
+TaskModal.propTypes = {
+  isOpen: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  onCreate: PropTypes.func.isRequired,
+  projectId: PropTypes.oneOfType([PropTypes.string, PropTypes.number])
+};

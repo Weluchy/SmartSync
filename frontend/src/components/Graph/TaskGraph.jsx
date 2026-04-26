@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useCallback } from 'react'; // Добавили useCallback
+import PropTypes from 'prop-types'; // Импорт PropTypes
 import { Network } from 'vis-network/standalone';
 import { api } from '../../api/client';
 
@@ -6,18 +7,10 @@ export default function TaskGraph({ projectId }) {
   const containerRef = useRef(null);
   const networkRef = useRef(null);
 
-  useEffect(() => {
-    if (projectId && containerRef.current) {
-      loadGraphData();
-    }
-  }, [projectId]);
-
-  async function loadGraphData() {
+  const loadGraphData = useCallback(async () => {
     try {
-      // Запрашиваем данные графа у твоего бэкенда
       const data = await api.get(`/projects/${projectId}/graph`);
       
-      // Преобразуем задачи в узлы (nodes)
       const nodes = data.tasks.map(t => ({
         id: t.id,
         label: t.title,
@@ -30,7 +23,6 @@ export default function TaskGraph({ projectId }) {
         margin: 10
       }));
 
-      // Преобразуем связи в ребра (edges)
       const edges = data.dependencies.map(d => ({
         from: d.parent_id,
         to: d.child_id,
@@ -56,7 +48,13 @@ export default function TaskGraph({ projectId }) {
     } catch (err) {
       console.error('Ошибка загрузки графа:', err);
     }
-  }
+  }, [projectId]); // Зависит от projectId
+
+  useEffect(() => {
+    if (projectId && containerRef.current) {
+      loadGraphData();
+    }
+  }, [projectId, loadGraphData]); // Добавили зависимости
 
   return (
     <div className="h-full w-full bg-gray-50 flex flex-col">
@@ -73,3 +71,8 @@ export default function TaskGraph({ projectId }) {
     </div>
   );
 }
+
+// Добавили валидацию пропсов
+TaskGraph.propTypes = {
+  projectId: PropTypes.oneOfType([PropTypes.string, PropTypes.number])
+};

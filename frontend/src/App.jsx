@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react'; // Добавили useCallback
 import { api } from './api/client';
 import MainLayout from './components/Layout/MainLayout';
 import Sidebar from './components/Sidebar/Sidebar';
@@ -16,14 +16,8 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  useEffect(() => {
-    const handleLogout = () => setIsAuthenticated(false);
-    window.addEventListener('auth-expired', handleLogout);
-    if (isAuthenticated) loadProjects();
-    return () => window.removeEventListener('auth-expired', handleLogout);
-  }, [isAuthenticated]);
-
-  async function loadProjects() {
+  // Обернули в useCallback, чтобы функция была стабильной
+  const loadProjects = useCallback(async () => {
     try {
       const data = await api.get('/projects');
       setProjects(data || []);
@@ -33,7 +27,14 @@ export default function App() {
     } catch (err) { 
       console.error('Ошибка загрузки проектов:', err); 
     }
-  }
+  }, [currentProjectId]);
+
+  useEffect(() => {
+    const handleLogout = () => setIsAuthenticated(false);
+    window.addEventListener('auth-expired', handleLogout);
+    if (isAuthenticated) loadProjects();
+    return () => window.removeEventListener('auth-expired', handleLogout);
+  }, [isAuthenticated, loadProjects]); // Добавили loadProjects в зависимости
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();
@@ -75,17 +76,17 @@ export default function App() {
           }}
         />
         <MainLayout 
-  projectName={currentProject?.name}
-  activeView={activeView}
-  onSwitchView={setActiveView}
-  onLogout={logout}
->
-  {activeView === 'kanban' ? (
-    <KanbanBoard projectId={currentProjectId} />
-  ) : (
-    <TaskGraph projectId={currentProjectId} />
-  )}
-</MainLayout>
+          projectName={currentProject?.name}
+          activeView={activeView}
+          onSwitchView={setActiveView}
+          onLogout={logout}
+        >
+          {activeView === 'kanban' ? (
+            <KanbanBoard projectId={currentProjectId} />
+          ) : (
+            <TaskGraph projectId={currentProjectId} />
+          )}
+        </MainLayout>
       </div>
     );
   }

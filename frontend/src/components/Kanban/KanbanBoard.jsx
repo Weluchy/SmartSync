@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import PropTypes from 'prop-types';
 import { api } from '../../api/client';
 import { Plus, MoreVertical } from 'lucide-react';
-import TaskModal from './TaskModal'; // Импортируем модалку
+import TaskModal from './TaskModal';
 
 const COLUMNS = [
   { id: 'todo', title: 'Бэклог', color: 'bg-gray-100' },
@@ -14,11 +15,7 @@ export default function KanbanBoard({ projectId }) {
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
 
-  useEffect(() => {
-    if (projectId) loadTasks();
-  }, [projectId]);
-
-  async function loadTasks() {
+  const loadTasks = useCallback(async () => {
     setLoading(true);
     try {
       const data = await api.get(`/projects/${projectId}/tasks`);
@@ -28,14 +25,17 @@ export default function KanbanBoard({ projectId }) {
     } finally {
       setLoading(false);
     }
-  }
+  }, [projectId]);
 
-  // Функция создания задачи
+  useEffect(() => {
+    if (projectId) loadTasks();
+  }, [projectId, loadTasks]);
+
   async function handleCreateTask(taskData) {
     try {
       await api.post('/tasks', taskData);
-      loadTasks(); // Обновляем список после создания
-    } catch (err) {
+      loadTasks();
+    } catch { // Удалили неиспользуемый err
       alert('Ошибка при создании задачи');
     }
   }
@@ -55,7 +55,6 @@ export default function KanbanBoard({ projectId }) {
 
   return (
     <div className="h-full relative">
-      {/* Кнопка "Создать задачу" */}
       <button 
         onClick={() => setIsModalOpen(true)}
         className="absolute top-4 right-8 z-10 bg-blue-600 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 hover:bg-blue-700 shadow-md transition-all"
@@ -111,7 +110,6 @@ export default function KanbanBoard({ projectId }) {
         ))}
       </div>
 
-      {/* Модальное окно */}
       <TaskModal 
         isOpen={isModalOpen}
         onClose={() => setIsModalOpen(false)}
@@ -121,3 +119,7 @@ export default function KanbanBoard({ projectId }) {
     </div>
   );
 }
+
+KanbanBoard.propTypes = {
+  projectId: PropTypes.oneOfType([PropTypes.string, PropTypes.number])
+};
