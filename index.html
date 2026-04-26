@@ -137,6 +137,38 @@
             loadGraph();
         };
 
+        // 1. Функция создания зависимости
+        document.getElementById('depForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const taskId = document.getElementById('d_child').value;
+            const dependsOnId = document.getElementById('d_parent').value;
+            
+            await fetch(`${GATEWAY}/tasks/${taskId}/dependencies`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json', 
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ depends_on_id: parseInt(dependsOnId) })
+            });
+            
+            // Очищаем форму и обновляем граф
+            e.target.reset();
+            setTimeout(loadGraph, 400); // Ждем пересчета от Math Engine
+        };
+
+        // 2. Функция сброса графа
+        async function resetDeps() {
+            if (!confirm("Удалить все связи? Задачи останутся.")) return;
+            
+            await fetch(`${GATEWAY}/dependencies`, { 
+                method: 'DELETE',
+                headers: {'Authorization': `Bearer ${token}`} 
+            });
+            
+            setTimeout(loadGraph, 400); 
+        }
+
         checkSession();
     </script>
 </body>

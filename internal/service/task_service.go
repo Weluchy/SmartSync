@@ -37,7 +37,9 @@ func (s *TaskService) CreateTask(t *models.Task) (int, error) {
 		return 0, err
 	}
 
-	// Передаем в шину данных ID пользователя, чтобы Math Engine пересчитал только ЕГО граф
+	// МГНОВЕННАЯ ИНВАЛИДАЦИЯ КЭША
+	s.redis.Del(context.Background(), fmt.Sprintf("smartsync:graph:user:%d", t.UserID))
+
 	payload := fmt.Sprintf(`{"task_id": %d, "user_id": %d}`, id, t.UserID)
 	s.nc.Publish("task.created", []byte(payload))
 	return id, nil
@@ -46,6 +48,8 @@ func (s *TaskService) CreateTask(t *models.Task) (int, error) {
 func (s *TaskService) CreateDependency(taskID, dependsOnID, userID int) error {
 	err := s.repo.CreateDependency(taskID, dependsOnID)
 	if err == nil {
+		// МГНОВЕННАЯ ИНВАЛИДАЦИЯ КЭША
+		s.redis.Del(context.Background(), fmt.Sprintf("smartsync:graph:user:%d", userID))
 		s.nc.Publish("graph.updated", []byte(fmt.Sprintf(`{"user_id": %d}`, userID)))
 	}
 	return err
@@ -54,13 +58,14 @@ func (s *TaskService) CreateDependency(taskID, dependsOnID, userID int) error {
 func (s *TaskService) ClearDependencies(userID int) error {
 	err := s.repo.ClearDependencies(userID)
 	if err == nil {
+		// МГНОВЕННАЯ ИНВАЛИДАЦИЯ КЭША
+		s.redis.Del(context.Background(), fmt.Sprintf("smartsync:graph:user:%d", userID))
 		s.nc.Publish("graph.updated", []byte(fmt.Sprintf(`{"user_id": %d}`, userID)))
 	}
 	return err
 }
 
 func (s *TaskService) GetGraph(ctx context.Context, userID int) (*models.GraphData, bool, error) {
-	// Персональный кэш пользователя!
 	cacheKey := fmt.Sprintf("smartsync:graph:user:%d", userID)
 	val, err := s.redis.Get(ctx, cacheKey).Result()
 	if err == nil {

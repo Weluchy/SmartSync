@@ -66,7 +66,13 @@ func (h *Handler) createDependency(c *gin.Context) {
 
 func (h *Handler) clearDependencies(c *gin.Context) {
 	userID, _ := c.Get("user_id")
-	h.service.ClearDependencies(userID.(int))
+
+	err := h.service.ClearDependencies(userID.(int))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось сбросить граф"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "Граф сброшен"})
 }
 

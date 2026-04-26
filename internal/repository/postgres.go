@@ -2,6 +2,7 @@ package repository
 
 import (
 	"database/sql"
+	"fmt"
 	"smartsync/internal/models"
 )
 
@@ -50,7 +51,16 @@ func (r *TaskRepository) CreateDependency(taskID, dependsOnID int) error {
 
 // Удаляем связи ТОЛЬКО для задач конкретного пользователя
 func (r *TaskRepository) ClearDependencies(userID int) error {
-	_, err := r.db.Exec(`DELETE FROM dependencies WHERE task_id IN (SELECT id FROM tasks WHERE user_id = $1)`, userID)
+	_, err := r.db.Exec(`
+		DELETE FROM dependencies 
+		WHERE task_id IN (SELECT id FROM tasks WHERE user_id = $1) 
+		   OR depends_on_id IN (SELECT id FROM tasks WHERE user_id = $2)
+	`, userID, userID)
+
+	// Теперь мы точно увидим, если база ругнется
+	if err != nil {
+		fmt.Println("[БД ОШИБКА] Не удалось удалить связи:", err)
+	}
 	return err
 }
 
