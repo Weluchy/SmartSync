@@ -10,22 +10,38 @@
     "preview": "vite preview"
   },
   "dependencies": {
+<<<<<<< HEAD
     "@tailwindcss/vite": "^4.2.4",
     "lucide-react": "^1.11.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tailwindcss": "^4.2.4"
+=======
+    "lucide-react": "^1.11.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "vis-network": "^10.0.2"
+>>>>>>> 52a78df0226ee1eef55feb12b6822cf095a3b258
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",
     "@vitejs/plugin-react": "^4.3.3",
+<<<<<<< HEAD
+=======
+    "autoprefixer": "^10.5.0",
+>>>>>>> 52a78df0226ee1eef55feb12b6822cf095a3b258
     "eslint": "^9.13.0",
     "eslint-plugin-react": "^7.37.2",
     "eslint-plugin-react-hooks": "^5.0.0",
     "eslint-plugin-react-refresh": "^0.4.14",
     "globals": "^15.11.0",
+<<<<<<< HEAD
+=======
+    "postcss": "^8.5.12",
+    "tailwindcss": "^4.2.4",
+>>>>>>> 52a78df0226ee1eef55feb12b6822cf095a3b258
     "vite": "^5.4.10"
   }
 }
