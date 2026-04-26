@@ -42,6 +42,10 @@ func main() {
 		protected.POST("/tasks/:id/dependencies", taskProxy)
 		protected.DELETE("/dependencies", taskProxy)
 		protected.GET("/graph", taskProxy)
+
+		// НОВЫЕ МАРШРУТЫ ДЛЯ УДАЛЕНИЯ:
+		protected.DELETE("/tasks/:id", taskProxy)
+		protected.DELETE("/tasks/:id/dependencies/:dep_id", taskProxy)
 	}
 
 	log.Println("API Gateway запущен на порту 8000")

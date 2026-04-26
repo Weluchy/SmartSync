@@ -64,6 +64,22 @@ func (r *TaskRepository) ClearDependencies(userID int) error {
 	return err
 }
 
+func (r *TaskRepository) DeleteTask(taskID, userID int) error {
+	// Благодаря ON DELETE CASCADE в нашей таблице dependencies,
+	// все связи этой задачи удалятся базой данных автоматически!
+	_, err := r.db.Exec("DELETE FROM tasks WHERE id = $1 AND user_id = $2", taskID, userID)
+	return err
+}
+
+func (r *TaskRepository) DeleteDependency(taskID, dependsOnID, userID int) error {
+	_, err := r.db.Exec(`
+		DELETE FROM dependencies 
+		WHERE task_id = $1 AND depends_on_id = $2 
+		AND task_id IN (SELECT id FROM tasks WHERE user_id = $3)
+	`, taskID, dependsOnID, userID)
+	return err
+}
+
 // Достаем граф ТОЛЬКО конкретного пользователя
 func (r *TaskRepository) GetGraphData(userID int) (*models.GraphData, error) {
 	graph := &models.GraphData{}

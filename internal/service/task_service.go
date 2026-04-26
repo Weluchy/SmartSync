@@ -77,3 +77,21 @@ func (s *TaskService) GetGraph(ctx context.Context, userID int) (*models.GraphDa
 	graph, err := s.repo.GetGraphData(userID)
 	return graph, false, err
 }
+
+func (s *TaskService) DeleteTask(taskID, userID int) error {
+	err := s.repo.DeleteTask(taskID, userID)
+	if err == nil {
+		s.redis.Del(context.Background(), fmt.Sprintf("smartsync:graph:user:%d", userID))
+		s.nc.Publish("graph.updated", []byte(fmt.Sprintf(`{"user_id": %d}`, userID)))
+	}
+	return err
+}
+
+func (s *TaskService) DeleteDependency(taskID, dependsOnID, userID int) error {
+	err := s.repo.DeleteDependency(taskID, dependsOnID, userID)
+	if err == nil {
+		s.redis.Del(context.Background(), fmt.Sprintf("smartsync:graph:user:%d", userID))
+		s.nc.Publish("graph.updated", []byte(fmt.Sprintf(`{"user_id": %d}`, userID)))
+	}
+	return err
+}

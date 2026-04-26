@@ -28,6 +28,8 @@ func (h *Handler) InitRoutes() *gin.Engine {
 		protected.POST("/tasks/:id/dependencies", h.createDependency)
 		protected.DELETE("/dependencies", h.clearDependencies)
 		protected.GET("/graph", h.getGraph)
+		protected.DELETE("/tasks/:id", h.deleteTask)
+		protected.DELETE("/tasks/:id/dependencies/:dep_id", h.deleteDependency)
 	}
 
 	return r
@@ -86,4 +88,27 @@ func (h *Handler) getGraph(c *gin.Context) {
 		c.Header("X-Cache", "MISS")
 	}
 	c.JSON(http.StatusOK, graph)
+}
+
+func (h *Handler) deleteTask(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	taskID, _ := strconv.Atoi(c.Param("id"))
+
+	if err := h.service.DeleteTask(taskID, userID.(int)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось удалить задачу"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Задача удалена"})
+}
+
+func (h *Handler) deleteDependency(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	taskID, _ := strconv.Atoi(c.Param("id"))
+	depID, _ := strconv.Atoi(c.Param("dep_id"))
+
+	if err := h.service.DeleteDependency(taskID, depID, userID.(int)); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось удалить связь"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Связь удалена"})
 }
