@@ -28,8 +28,13 @@ func (h *Handler) InitRoutes() *gin.Engine {
 		protected.POST("/tasks/:id/dependencies", h.createDependency)
 		protected.DELETE("/dependencies", h.clearDependencies)
 		protected.GET("/graph", h.getGraph)
+
+		// Роуты удаления
 		protected.DELETE("/tasks/:id", h.deleteTask)
 		protected.DELETE("/tasks/:id/dependencies/:dep_id", h.deleteDependency)
+
+		// ВОТ ЭТА СТРОЧКА БЫЛА ПРОПУЩЕНА (Роут для обновления):
+		protected.PUT("/tasks/:id", h.updateTask)
 	}
 
 	return r
