@@ -191,20 +191,7 @@
             setTimeout(loadGraph, 400); 
         }
 
-        document.getElementById('deleteSelectedBtn').onclick = async () => {
-            if (!confirm("Удалить выбранную задачу и все ее связи?")) return;
-            const selectedNodes = window.network.getSelectedNodes();
-            if (selectedNodes.length === 0) return;
-            
-            const taskId = selectedNodes[0];
-            await fetch(`${GATEWAY}/tasks/${taskId}`, {
-                method: 'DELETE',
-                headers: {'Authorization': `Bearer ${token}`}
-            });
-            
-            document.getElementById('deleteSelectedBtn').classList.add('hidden');
-            setTimeout(loadGraph, 400); // Ждем пересчета
-        };
+        
         // Глобальная функция удаления с параметром heal (сшивать или нет)
         window.deleteSelectedNode = async (heal) => {
             const actionText = heal ? "Удалить задачу и связать ее соседей напрямую?" : "Удалить задачу и разорвать все ее связи?";
