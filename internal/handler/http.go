@@ -42,6 +42,11 @@ func (h *Handler) InitRoutes() *gin.Engine {
 
 		// МАРШРУТ ДЛЯ КАНБАН-ДОСКИ
 		protected.PATCH("/tasks/:id/status", h.updateTaskStatus)
+		api := r.Group("/api")
+		{
+			api.GET("/projects/:project_id/tasks", h.getProjectTasks) // Добавь эту строку
+			api.PATCH("/tasks/:id/status", h.updateTask)
+		}
 	}
 
 	projectHandler := NewProjectHandler(h.projectService)
@@ -68,22 +73,18 @@ func (h *Handler) createTask(c *gin.Context) {
 }
 
 func (h *Handler) updateTask(c *gin.Context) {
-	userID, _ := c.Get("user_id")
 	taskID, _ := strconv.Atoi(c.Param("id"))
 	var t models.Task
-	c.ShouldBindJSON(&t)
-	t.ID = taskID
-	t.UserID = userID.(int)
-
-	if err := h.service.UpdateTask(&t); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка обновления"})
-		return
-	}
 	if err := c.ShouldBindJSON(&t); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат данных"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "Обновлено"})
+	t.ID = taskID
+	if err := h.service.UpdateTask(&t); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "updated"})
 }
 
 func (h *Handler) deleteTask(c *gin.Context) {
@@ -113,7 +114,15 @@ func (h *Handler) createDependency(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Связь создана"})
 }
-
+func (h *Handler) getProjectTasks(c *gin.Context) {
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
+	tasks, err := h.service.GetTasksByProject(projectID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка загрузки задач"})
+		return
+	}
+	c.JSON(http.StatusOK, tasks)
+}
 func (h *Handler) deleteDependency(c *gin.Context) {
 	userID, _ := c.Get("user_id")
 	taskID, _ := strconv.Atoi(c.Param("id"))

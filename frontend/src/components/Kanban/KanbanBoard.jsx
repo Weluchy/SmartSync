@@ -30,14 +30,18 @@ export default function KanbanBoard({ projectId }) {
   }
 
   async function updateTaskStatus(taskId, newStatus) {
-    try {
-      await api.patch(`/tasks/${taskId}`, { status: newStatus });
-      // Оптимистично обновляем UI
-      setTasks(tasks.map(t => t.id === taskId ? { ...t, status: newStatus } : t));
-    } catch (err) {
-      alert('Не удалось обновить статус');
-    }
+  try {
+    // Добавляем /status в конец URL
+    await api.patch(`/tasks/${taskId}/status`, { status: newStatus });
+    
+    setTasks(prev => prev.map(t => 
+      t.id === parseInt(taskId) ? { ...t, status: newStatus } : t
+    ));
+  } catch (err) {
+    console.error('Ошибка обновления:', err);
+    alert('Не удалось переместить задачу');
   }
+}
 
   if (loading) return <div className="p-8 text-center text-gray-400">Загрузка задач...</div>;
 
