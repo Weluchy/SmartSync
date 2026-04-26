@@ -40,8 +40,8 @@ func main() {
 		protected.DELETE("/tasks/:id", taskProxy)
 		protected.POST("/tasks/:id/dependencies", taskProxy)
 		protected.DELETE("/tasks/:id/dependencies/:dep_id", taskProxy)
+		protected.PATCH("/tasks/:id/status", taskProxy)
 
-		// ИСПРАВЛЕНИЕ ЗДЕСЬ: используем :project_id везде
 		protected.GET("/projects", taskProxy)
 		protected.POST("/projects", taskProxy)
 		protected.DELETE("/projects/:project_id", taskProxy)

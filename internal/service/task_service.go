@@ -100,3 +100,8 @@ func (s *TaskService) GetGraph(ctx context.Context, projectID, userID int) (*mod
 	graph, err := s.repo.GetGraphData(projectID, userID)
 	return graph, false, err
 }
+
+// НОВЫЙ МЕТОД ДЛЯ КАНБАНА
+func (s *TaskService) UpdateTaskStatus(taskID, userID int, status string) error {
+	return s.repo.UpdateTaskStatus(taskID, userID, status)
+}

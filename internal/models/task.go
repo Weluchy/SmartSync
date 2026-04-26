@@ -2,18 +2,15 @@ package models
 
 type Task struct {
 	ID            int     `json:"id"`
-	UserID        int     `json:"-"`
-	ProjectID     int     `json:"project_id"` // Привязка к папке (проекту)
 	Title         string  `json:"title"`
 	Opt           int     `json:"opt"`
 	Real          int     `json:"real"`
 	Pess          int     `json:"pess"`
 	DurationHours float64 `json:"duration_hours"`
 	PriorityScore float64 `json:"priority_score"`
-}
-
-type Dependency struct {
-	DependsOnID int `json:"depends_on_id"`
+	UserID        int     `json:"user_id"`
+	ProjectID     int     `json:"project_id"`
+	Status        string  `json:"status"` // НОВОЕ ПОЛЕ: todo, in_progress, done
 }
 
 type GraphEdge struct {

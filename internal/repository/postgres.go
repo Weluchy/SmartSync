@@ -11,15 +11,20 @@ type TaskRepository struct {
 }
 
 func NewTaskRepository(db *sql.DB) *TaskRepository {
+	// Автоматическая миграция: добавляем колонку status, если её нет
+	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'todo'`)
+	db.Exec(`UPDATE tasks SET status = 'todo' WHERE status IS NULL`)
 	return &TaskRepository{db: db}
 }
 
-// Проверяем, есть ли у пользователя доступ к проекту
-func (r *TaskRepository) CheckAccess(projectID, userID int) error {
-	var ownerID int
-	err := r.db.QueryRow("SELECT owner_id FROM projects WHERE id = $1", projectID).Scan(&ownerID)
-	if err != nil || ownerID != userID {
+func (r *TaskRepository) CheckAccess(projectID, userID int, requireWrite bool) error {
+	var role string
+	err := r.db.QueryRow("SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2", projectID, userID).Scan(&role)
+	if err != nil {
 		return fmt.Errorf("проект не найден или доступ запрещен")
+	}
+	if requireWrite && role != "owner" && role != "editor" {
+		return fmt.Errorf("недостаточно прав для редактирования")
 	}
 	return nil
 }
@@ -31,36 +36,57 @@ func (r *TaskRepository) GetProjectIDByTask(taskID int) (int, error) {
 }
 
 func (r *TaskRepository) CreateTask(t *models.Task) (int, error) {
-	if err := r.CheckAccess(t.ProjectID, t.UserID); err != nil {
+	if err := r.CheckAccess(t.ProjectID, t.UserID, true); err != nil {
 		return 0, err
 	}
 	var id int
-	err := r.db.QueryRow("INSERT INTO tasks (title, opt, real, pess, user_id, project_id) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+	// При создании задача автоматически получает статус 'todo'
+	err := r.db.QueryRow("INSERT INTO tasks (title, opt, real, pess, user_id, project_id, status) VALUES ($1, $2, $3, $4, $5, $6, 'todo') RETURNING id",
 		t.Title, t.Opt, t.Real, t.Pess, t.UserID, t.ProjectID).Scan(&id)
 	return id, err
 }
 
 func (r *TaskRepository) UpdateTask(t *models.Task) error {
-	_, err := r.db.Exec(`
-		UPDATE tasks 
-		SET title = $1, opt = $2, real = $3, pess = $4 
-		WHERE id = $5 AND user_id = $6
-	`, t.Title, t.Opt, t.Real, t.Pess, t.ID, t.UserID)
+	pid, err := r.GetProjectIDByTask(t.ID)
+	if err != nil {
+		return err
+	}
+	if err := r.CheckAccess(pid, t.UserID, true); err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec("UPDATE tasks SET title = $1, opt = $2, real = $3, pess = $4 WHERE id = $5", t.Title, t.Opt, t.Real, t.Pess, t.ID)
+	return err
+}
+
+// НОВЫЙ МЕТОД: Изменение только статуса (для Канбана)
+func (r *TaskRepository) UpdateTaskStatus(taskID, userID int, status string) error {
+	pid, err := r.GetProjectIDByTask(taskID)
+	if err != nil {
+		return err
+	}
+	if err := r.CheckAccess(pid, userID, true); err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec("UPDATE tasks SET status = $1 WHERE id = $2", status, taskID)
 	return err
 }
 
 func (r *TaskRepository) DeleteTask(taskID, userID int, heal bool) error {
+	pid, err := r.GetProjectIDByTask(taskID)
+	if err != nil {
+		return err
+	}
+	if err := r.CheckAccess(pid, userID, true); err != nil {
+		return err
+	}
+
 	tx, err := r.db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
-
-	var ownerID int
-	err = tx.QueryRow("SELECT user_id FROM tasks WHERE id = $1", taskID).Scan(&ownerID)
-	if err != nil || ownerID != userID {
-		return fmt.Errorf("доступ запрещен")
-	}
 
 	if heal {
 		rowsP, _ := tx.Query("SELECT depends_on_id FROM dependencies WHERE task_id = $1", taskID)
@@ -87,12 +113,10 @@ func (r *TaskRepository) DeleteTask(taskID, userID int, heal bool) error {
 			}
 		}
 	}
-
-	_, err = tx.Exec("DELETE FROM tasks WHERE id = $1 AND user_id = $2", taskID, userID)
+	_, err = tx.Exec("DELETE FROM tasks WHERE id = $1", taskID)
 	if err != nil {
 		return err
 	}
-
 	return tx.Commit()
 }
 
@@ -102,51 +126,46 @@ func (r *TaskRepository) CreateDependency(taskID, dependsOnID int) error {
 }
 
 func (r *TaskRepository) DeleteDependency(taskID, dependsOnID, userID int) error {
-	_, err := r.db.Exec(`
-		DELETE FROM dependencies 
-		WHERE task_id = $1 AND depends_on_id = $2 
-		AND task_id IN (SELECT id FROM tasks WHERE user_id = $3)
-	`, taskID, dependsOnID, userID)
+	pid, err := r.GetProjectIDByTask(taskID)
+	if err != nil {
+		return err
+	}
+	if err := r.CheckAccess(pid, userID, true); err != nil {
+		return err
+	}
+	_, err = r.db.Exec(`DELETE FROM dependencies WHERE task_id = $1 AND depends_on_id = $2`, taskID, dependsOnID)
 	return err
 }
 
 func (r *TaskRepository) ClearDependencies(projectID, userID int) error {
-	if err := r.CheckAccess(projectID, userID); err != nil {
+	if err := r.CheckAccess(projectID, userID, true); err != nil {
 		return err
 	}
-	_, err := r.db.Exec(`
-		DELETE FROM dependencies 
-		WHERE task_id IN (SELECT id FROM tasks WHERE project_id = $1) 
-		   OR depends_on_id IN (SELECT id FROM tasks WHERE project_id = $1)
-	`, projectID)
+	_, err := r.db.Exec(`DELETE FROM dependencies WHERE task_id IN (SELECT id FROM tasks WHERE project_id = $1) OR depends_on_id IN (SELECT id FROM tasks WHERE project_id = $1)`, projectID)
 	return err
 }
 
 func (r *TaskRepository) GetGraphData(projectID, userID int) (*models.GraphData, error) {
-	if err := r.CheckAccess(projectID, userID); err != nil {
+	if err := r.CheckAccess(projectID, userID, false); err != nil {
 		return nil, err
 	}
 	graph := &models.GraphData{}
 
-	rowsNodes, _ := r.db.Query("SELECT id, title, opt, real, pess, duration_hours, priority_score FROM tasks WHERE project_id = $1", projectID)
+	// ТЕПЕРЬ ДОСТАЕМ И СТАТУС ТОЖЕ
+	rowsNodes, _ := r.db.Query("SELECT id, title, opt, real, pess, duration_hours, priority_score, status FROM tasks WHERE project_id = $1", projectID)
 	defer rowsNodes.Close()
 	for rowsNodes.Next() {
 		var t models.Task
-		rowsNodes.Scan(&t.ID, &t.Title, &t.Opt, &t.Real, &t.Pess, &t.DurationHours, &t.PriorityScore)
+		rowsNodes.Scan(&t.ID, &t.Title, &t.Opt, &t.Real, &t.Pess, &t.DurationHours, &t.PriorityScore, &t.Status)
 		graph.Nodes = append(graph.Nodes, t)
 	}
 
-	rowsEdges, _ := r.db.Query(`
-		SELECT d.depends_on_id, d.task_id 
-		FROM dependencies d 
-		JOIN tasks t ON d.task_id = t.id 
-		WHERE t.project_id = $1`, projectID)
+	rowsEdges, _ := r.db.Query(`SELECT d.depends_on_id, d.task_id FROM dependencies d JOIN tasks t ON d.task_id = t.id WHERE t.project_id = $1`, projectID)
 	defer rowsEdges.Close()
 	for rowsEdges.Next() {
 		var e models.GraphEdge
 		rowsEdges.Scan(&e.From, &e.To)
 		graph.Edges = append(graph.Edges, e)
 	}
-
 	return graph, nil
 }

@@ -32,10 +32,11 @@ func (h *Handler) InitRoutes() *gin.Engine {
 		protected.DELETE("/tasks/:id", h.deleteTask)
 		protected.POST("/tasks/:id/dependencies", h.createDependency)
 		protected.DELETE("/tasks/:id/dependencies/:dep_id", h.deleteDependency)
-
+		protected.PATCH("/tasks/:id/status", h.updateTaskStatus)
 		// Обновленные роуты (обращаются к конкретной папке)
 		protected.DELETE("/projects/:project_id/dependencies", h.clearDependencies)
 		protected.GET("/projects/:project_id/graph", h.getGraph)
+
 	}
 
 	projectHandler := NewProjectHandler(h.projectService)
@@ -131,4 +132,23 @@ func (h *Handler) getGraph(c *gin.Context) {
 		c.Header("X-Cache", "MISS")
 	}
 	c.JSON(http.StatusOK, graph)
+}
+
+func (h *Handler) updateTaskStatus(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	taskID, _ := strconv.Atoi(c.Param("id"))
+
+	var req struct {
+		Status string `json:"status" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный статус"})
+		return
+	}
+
+	if err := h.taskService.UpdateTaskStatus(taskID, userID.(int), req.Status); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Статус обновлен"})
 }

@@ -24,6 +24,41 @@
         </div>
     </div>
 
+    <div id="projectSettingsModal" class="absolute inset-0 bg-gray-900 bg-opacity-50 z-50 flex items-center justify-center hidden">
+        <div class="bg-white p-6 rounded-xl shadow-2xl w-96 relative">
+            <div class="flex justify-between items-center mb-4 border-b pb-2">
+                <h2 class="text-xl font-black text-gray-800">Настройки проекта</h2>
+                <button onclick="closeProjectSettings()" class="text-gray-400 hover:text-red-500 font-bold text-lg">✕</button>
+            </div>
+
+            <div id="ownerControls">
+                <div class="mb-4">
+                    <label class="text-xs text-gray-500 font-bold uppercase tracking-wide">Переименовать</label>
+                    <div class="flex gap-2 mt-1">
+                        <input type="text" id="editProjectName" class="border p-2 rounded flex-1 text-sm outline-none focus:border-blue-500">
+                        <button onclick="renameCurrentProject()" class="bg-blue-600 text-white px-3 py-2 rounded text-sm font-bold shadow hover:bg-blue-700">OK</button>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="text-xs text-gray-500 font-bold uppercase tracking-wide">Пригласить участника</label>
+                    <div class="flex gap-2 mt-1">
+                        <input type="text" id="inviteUsername" placeholder="Введи логин друга" class="border p-2 rounded flex-1 text-sm outline-none focus:border-green-500">
+                        <button onclick="inviteToProject()" class="bg-green-600 text-white px-3 py-2 rounded text-sm font-bold shadow hover:bg-green-700">✚</button>
+                    </div>
+                </div>
+
+                <div class="mt-6 pt-4 border-t border-red-100">
+                    <button onclick="deleteCurrentProject()" class="w-full bg-red-50 text-red-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-100 hover:text-red-700 transition">🗑 Удалить проект навсегда</button>
+                </div>
+            </div>
+
+            <div id="guestMessage" class="hidden text-sm text-gray-500 text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                Ты приглашен в этот проект как участник.<br>Управлять настройками может только создатель.
+            </div>
+        </div>
+    </div>
+
     <aside class="w-64 bg-white border-r border-gray-200 flex flex-col hidden" id="sidebar">
         <div class="p-6 border-b border-gray-100 flex justify-between items-center">
             <h2 class="text-xl font-black text-gray-800">Проекты</h2>
@@ -165,14 +200,84 @@
             
             projects.forEach(p => {
                 const li = document.createElement('li');
-                li.className = `p-3 rounded-lg cursor-pointer font-medium text-sm transition ${currentProjectId === p.id ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-100'}`;
-                li.innerText = p.name;
-                li.onclick = () => selectProject(p.id);
+                const isActive = currentProjectId === p.id;
+                li.className = `p-2 rounded-lg cursor-pointer flex justify-between items-center transition ${isActive ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-100'}`;
+                
+                // Если мы гость, вешаем красивый фиолетовый бейдж
+                let roleBadge = p.role === 'owner' ? '' : `<span class="text-[10px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full ml-2 font-bold">гость</span>`;
+                
+                li.innerHTML = `
+                    <div class="flex-1 font-medium text-sm truncate flex items-center" onclick="selectProject(${p.id})">
+                        ${p.name} ${roleBadge}
+                    </div>
+                    <button onclick="openProjectSettings(${p.id}, '${p.name}', '${p.role}')" class="text-gray-400 hover:text-gray-800 px-2 text-lg transition">⚙️</button>
+                `;
                 list.appendChild(li);
             });
 
             if (projects.length > 0 && !currentProjectId) {
                 selectProject(projects[0].id);
+            }
+        }
+
+        // --- УПРАВЛЕНИЕ НАСТРОЙКАМИ ПРОЕКТА ---
+        let editingProjectId = null;
+
+        function openProjectSettings(id, name, role) {
+            editingProjectId = id;
+            document.getElementById('projectSettingsModal').classList.remove('hidden');
+            document.getElementById('editProjectName').value = name;
+            
+            if (role === 'owner') {
+                document.getElementById('ownerControls').classList.remove('hidden');
+                document.getElementById('guestMessage').classList.add('hidden');
+            } else {
+                document.getElementById('ownerControls').classList.add('hidden');
+                document.getElementById('guestMessage').classList.remove('hidden');
+            }
+        }
+
+        function closeProjectSettings() {
+            document.getElementById('projectSettingsModal').classList.add('hidden');
+            editingProjectId = null;
+        }
+
+        async function renameCurrentProject() {
+            const newName = document.getElementById('editProjectName').value;
+            await fetch(`${GATEWAY}/projects/${editingProjectId}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+                body: JSON.stringify({ name: newName })
+            });
+            closeProjectSettings();
+            loadProjects();
+        }
+
+        async function deleteCurrentProject() {
+            if (!confirm("Точно удалить проект? Все задачи и связи будут безвозвратно стерты!")) return;
+            await fetch(`${GATEWAY}/projects/${editingProjectId}`, {
+                method: 'DELETE',
+                headers: {'Authorization': `Bearer ${token}`}
+            });
+            currentProjectId = null; // Сбрасываем выбранный проект
+            closeProjectSettings();
+            loadProjects(); // Загрузит список и выберет первый доступный проект
+        }
+
+        async function inviteToProject() {
+            const username = document.getElementById('inviteUsername').value;
+            const res = await fetch(`${GATEWAY}/projects/${editingProjectId}/members`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+                body: JSON.stringify({ username: username })
+            });
+            
+            const data = await res.json();
+            if (res.ok) {
+                alert("Пользователь успешно приглашен!");
+                document.getElementById('inviteUsername').value = '';
+            } else {
+                alert("Ошибка: " + data.error);
             }
         }
 
@@ -228,7 +333,6 @@
             const actionText = heal ? "Удалить и сшить соседей напрямую?" : "Разорвать связи и удалить?";
             if (!confirm(actionText)) return;
             
-            // ИСПРАВЛЕНИЕ: Убрали window.
             const selectedNodes = network.getSelectedNodes(); 
             if (selectedNodes.length === 0) return;
             
@@ -243,28 +347,7 @@
         window.closeEdit = () => document.getElementById('editMenu').classList.add('hidden');
 
         window.saveEdit = async () => {
-            // ИСПРАВЛЕНИЕ: Убрали window.
             const selectedNodes = network.getSelectedNodes(); 
-            if (selectedNodes.length === 0) return;
-            
-            await fetch(`${GATEWAY}/tasks/${selectedNodes[0]}`, {
-                method: 'PUT',
-                headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
-                body: JSON.stringify({
-                    title: document.getElementById('e_title').value,
-                    opt: parseInt(document.getElementById('e_opt').value),
-                    real: parseInt(document.getElementById('e_real').value),
-                    pess: parseInt(document.getElementById('e_pess').value)
-                })
-            });
-            closeEdit();
-            setTimeout(loadGraph, 400); 
-        };
-
-        window.closeEdit = () => document.getElementById('editMenu').classList.add('hidden');
-
-        window.saveEdit = async () => {
-            const selectedNodes = window.network.getSelectedNodes();
             if (selectedNodes.length === 0) return;
             
             await fetch(`${GATEWAY}/tasks/${selectedNodes[0]}`, {
