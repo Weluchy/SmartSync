@@ -1,16 +1,7 @@
-<<<<<<< HEAD
 @import "tailwindcss";
 
 body {
   background-color: #f9fafb;
   color: #111827;
   font-family: ui-sans-serif, system-ui, sans-serif;
-=======
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
-body {
-  @apply bg-gray-50 text-gray-900 font-sans antialiased;
->>>>>>> 52a78df0226ee1eef55feb12b6822cf095a3b258
 }

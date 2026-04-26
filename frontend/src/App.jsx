@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { api } from './api/client';
 import MainLayout from './components/Layout/MainLayout';
 import Sidebar from './components/Sidebar/Sidebar';
+import KanbanBoard from './components/Kanban/KanbanBoard';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('token'));
@@ -73,17 +74,21 @@ export default function App() {
           }}
         />
         <MainLayout 
-          projectName={currentProject?.name}
-          activeView={activeView}
-          onSwitchView={setActiveView}
-          onLogout={logout}
-        >
-          <div className="p-8 h-full">
-            <div className="bg-white border-2 border-dashed border-gray-200 rounded-2xl h-full flex items-center justify-center text-gray-400">
-              {activeView === 'graph' ? 'Здесь будет Граф' : 'Здесь будет Канбан'}
-            </div>
-          </div>
-        </MainLayout>
+  projectName={currentProject?.name}
+  activeView={activeView}
+  onSwitchView={setActiveView}
+  onLogout={logout}
+>
+  {activeView === 'kanban' ? (
+    <KanbanBoard projectId={currentProjectId} />
+  ) : (
+    <div className="p-8 h-full">
+      <div className="bg-white border-2 border-dashed border-gray-200 rounded-2xl h-full flex items-center justify-center text-gray-400">
+        Тут скоро будет твой математический Граф 🕸️
+      </div>
+    </div>
+  )}
+</MainLayout>
       </div>
     );
   }
