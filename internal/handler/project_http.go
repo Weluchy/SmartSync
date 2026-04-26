@@ -3,6 +3,7 @@ package handler
 import (
 	"net/http"
 	"smartsync/internal/service"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 )
@@ -15,41 +16,88 @@ func NewProjectHandler(s *service.ProjectService) *ProjectHandler {
 	return &ProjectHandler{service: s}
 }
 
-// Эта функция "прикрепляет" маршруты к существующему роутеру
 func (h *ProjectHandler) RegisterRoutes(protected *gin.RouterGroup) {
 	protected.GET("/projects", h.getProjects)
 	protected.POST("/projects", h.createProject)
+
+	// ИСПРАВЛЕНИЕ ЗДЕСЬ: используем :project_id вместо :id
+	protected.DELETE("/projects/:project_id", h.deleteProject)
+	protected.PUT("/projects/:project_id", h.renameProject)
+	protected.POST("/projects/:project_id/members", h.addMember)
 }
 
 func (h *ProjectHandler) getProjects(c *gin.Context) {
 	userID, _ := c.Get("user_id")
-
 	projects, err := h.service.GetUserProjects(userID.(int))
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка получения проектов"})
 		return
 	}
-
 	c.JSON(http.StatusOK, projects)
 }
 
 func (h *ProjectHandler) createProject(c *gin.Context) {
 	userID, _ := c.Get("user_id")
-
 	var req struct {
 		Name string `json:"name" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Имя проекта не должно быть пустым"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Имя не должно быть пустым"})
 		return
 	}
-
 	id, err := h.service.CreateProject(req.Name, userID.(int))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось создать проект"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось создать"})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"message": "Создано", "id": id})
+}
+
+func (h *ProjectHandler) deleteProject(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	// ИСПРАВЛЕНИЕ ЗДЕСЬ: читаем param "project_id"
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
+
+	if err := h.service.DeleteProject(projectID, userID.(int)); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Только создатель может удалить проект"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Проект удален"})
+}
+
+func (h *ProjectHandler) renameProject(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	// ИСПРАВЛЕНИЕ ЗДЕСЬ: читаем param "project_id"
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
+	var req struct {
+		Name string `json:"name" binding:"required"`
+	}
+	c.ShouldBindJSON(&req)
+
+	if err := h.service.RenameProject(projectID, userID.(int), req.Name); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Только создатель может переименовать"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Проект переименован"})
+}
+
+func (h *ProjectHandler) addMember(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	// ИСПРАВЛЕНИЕ ЗДЕСЬ: читаем param "project_id"
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
+	var req struct {
+		Username string `json:"username" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Укажите логин пользователя"})
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"message": "Проект успешно создан", "id": id})
+	if err := h.service.AddMember(projectID, userID.(int), req.Username); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Пользователь успешно приглашен!"})
 }

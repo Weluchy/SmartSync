@@ -27,26 +27,26 @@ func main() {
 		c.Next()
 	})
 
-	// Открытые маршруты улетают в Auth Service
 	authProxy := reverseProxy("http://localhost:8081")
 	r.POST("/register", authProxy)
 	r.POST("/login", authProxy)
 
-	// Защищенные маршруты улетают в Task Service
 	taskProxy := reverseProxy("http://localhost:8080")
 	protected := r.Group("/")
 	protected.Use(authMiddleware())
 	{
-		// Маршруты Задач
 		protected.POST("/tasks", taskProxy)
 		protected.PUT("/tasks/:id", taskProxy)
 		protected.DELETE("/tasks/:id", taskProxy)
 		protected.POST("/tasks/:id/dependencies", taskProxy)
 		protected.DELETE("/tasks/:id/dependencies/:dep_id", taskProxy)
 
-		// Маршруты Проектов
+		// ИСПРАВЛЕНИЕ ЗДЕСЬ: используем :project_id везде
 		protected.GET("/projects", taskProxy)
 		protected.POST("/projects", taskProxy)
+		protected.DELETE("/projects/:project_id", taskProxy)
+		protected.PUT("/projects/:project_id", taskProxy)
+		protected.POST("/projects/:project_id/members", taskProxy)
 		protected.DELETE("/projects/:project_id/dependencies", taskProxy)
 		protected.GET("/projects/:project_id/graph", taskProxy)
 	}

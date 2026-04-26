@@ -20,3 +20,15 @@ func (s *ProjectService) GetUserProjects(userID int) ([]models.Project, error) {
 func (s *ProjectService) CreateProject(name string, userID int) (int, error) {
 	return s.repo.CreateProject(name, userID)
 }
+
+func (s *ProjectService) DeleteProject(projectID, userID int) error {
+	return s.repo.DeleteProject(projectID, userID)
+}
+
+func (s *ProjectService) RenameProject(projectID, userID int, newName string) error {
+	return s.repo.RenameProject(projectID, userID, newName)
+}
+
+func (s *ProjectService) AddMember(projectID, ownerID int, username string) error {
+	return s.repo.AddMember(projectID, ownerID, username)
+}

@@ -227,7 +227,9 @@
         window.deleteSelectedNode = async (heal) => {
             const actionText = heal ? "Удалить и сшить соседей напрямую?" : "Разорвать связи и удалить?";
             if (!confirm(actionText)) return;
-            const selectedNodes = window.network.getSelectedNodes();
+            
+            // ИСПРАВЛЕНИЕ: Убрали window.
+            const selectedNodes = network.getSelectedNodes(); 
             if (selectedNodes.length === 0) return;
             
             await fetch(`${GATEWAY}/tasks/${selectedNodes[0]}?heal=${heal}`, {
@@ -235,6 +237,27 @@
                 headers: {'Authorization': `Bearer ${token}`}
             });
             document.getElementById('deleteMenu').classList.add('hidden');
+            setTimeout(loadGraph, 400); 
+        };
+
+        window.closeEdit = () => document.getElementById('editMenu').classList.add('hidden');
+
+        window.saveEdit = async () => {
+            // ИСПРАВЛЕНИЕ: Убрали window.
+            const selectedNodes = network.getSelectedNodes(); 
+            if (selectedNodes.length === 0) return;
+            
+            await fetch(`${GATEWAY}/tasks/${selectedNodes[0]}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+                body: JSON.stringify({
+                    title: document.getElementById('e_title').value,
+                    opt: parseInt(document.getElementById('e_opt').value),
+                    real: parseInt(document.getElementById('e_real').value),
+                    pess: parseInt(document.getElementById('e_pess').value)
+                })
+            });
+            closeEdit();
             setTimeout(loadGraph, 400); 
         };
 
