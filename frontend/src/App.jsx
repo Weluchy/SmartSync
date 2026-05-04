@@ -43,11 +43,19 @@ useEffect(() => {
   }, [currentProjectId]);
 
   useEffect(() => {
-    const handleLogout = () => setIsAuthenticated(false);
-    window.addEventListener('auth-expired', handleLogout);
-    if (isAuthenticated) loadProjects();
-    return () => window.removeEventListener('auth-expired', handleLogout);
-  }, [isAuthenticated, loadProjects]); // Добавили loadProjects в зависимости
+  if (isAuthenticated) {
+    loadProjects();
+    loadInvitations();
+    
+    // ПРИКАЗ: Запускаем опрос сервера каждые 10 секунд
+    const interval = setInterval(() => {
+      loadProjects();
+      loadInvitations();
+    }, 10000); 
+
+    return () => clearInterval(interval);
+  }
+}, [isAuthenticated, loadProjects, loadInvitations]);
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();

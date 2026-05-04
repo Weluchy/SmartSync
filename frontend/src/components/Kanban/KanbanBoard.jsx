@@ -111,6 +111,10 @@ export default function KanbanBoard({ projectId }) {
                           </button>
                         </div>
                         <h4 className="text-sm font-bold text-gray-800 mt-2">{task.title}</h4>
+{/* НОВОЕ: Отображение автора */}
+<p className="text-[9px] text-gray-400 mt-1 uppercase font-medium">
+  Автор: {task.created_by_name || 'Система'}
+</p>
                         
                         {isCritical && (
                           <div className="flex items-center gap-1 text-[9px] text-red-600 font-bold mt-3 bg-red-100 w-fit px-2.5 py-1 rounded-full">
