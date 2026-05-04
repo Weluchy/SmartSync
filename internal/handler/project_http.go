@@ -24,6 +24,12 @@ func (h *ProjectHandler) RegisterRoutes(protected *gin.RouterGroup) {
 	protected.DELETE("/projects/:project_id", h.deleteProject)
 	protected.PUT("/projects/:project_id", h.renameProject)
 	protected.POST("/projects/:project_id/members", h.addMember)
+
+	protected.GET("/projects/:project_id/members", h.getMembers)
+}
+
+func (h *ProjectHandler) getMembers(c *gin.Context) {
+	c.JSON(http.StatusOK, []interface{}{})
 }
 
 func (h *ProjectHandler) getProjects(c *gin.Context) {

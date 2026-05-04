@@ -44,6 +44,12 @@ func main() {
 		protected.DELETE("/tasks/:id/dependencies/:dep_id", taskProxy)
 		protected.PATCH("/tasks/:id/status", taskProxy)
 
+		protected.GET("/user/profile", authProxy)
+		protected.PUT("/user/profile", authProxy)
+
+		protected.GET("/invitations/my", taskProxy)
+		protected.GET("/projects/:project_id/members", taskProxy)
+
 		protected.GET("/projects", taskProxy)
 		protected.POST("/projects", taskProxy)
 		protected.DELETE("/projects/:project_id", taskProxy)

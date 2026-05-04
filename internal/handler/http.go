@@ -38,6 +38,7 @@ func (h *Handler) InitRoutes() *gin.Engine {
 		protected.DELETE("/projects/:project_id/dependencies", h.clearDependencies)
 		protected.GET("/projects/:project_id/graph", h.getGraph)
 		protected.GET("/projects/:project_id/tasks", h.getProjectTasks)
+		protected.GET("/invitations/my", h.getMyInvitations)
 	}
 	projectHandler := NewProjectHandler(h.projectService)
 	projectHandler.RegisterRoutes(protected)
@@ -237,4 +238,8 @@ func getUserID(c *gin.Context) (int, error) {
 	default:
 		return 0, errors.New("invalid user id type")
 	}
+}
+
+func (h *Handler) getMyInvitations(c *gin.Context) {
+	c.JSON(http.StatusOK, []interface{}{})
 }

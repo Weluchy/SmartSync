@@ -191,21 +191,26 @@ func (r *TaskRepository) GetGraphData(projectID, userID int) (*models.GraphData,
 }
 
 // GetTasksByProject возвращает список всех задач конкретного проекта
-// GetTasksByProject возвращает список всех задач конкретного проекта
 func (r *TaskRepository) GetTasksByProject(projectID, userID int) ([]models.Task, error) {
+	// 1. Сначала проверяем, есть ли у пользователя доступ к проекту
+	if err := r.CheckAccess(projectID, userID, false); err != nil {
+		return nil, err
+	}
+
 	var tasks []models.Task
 
-	// Функция COALESCE вернет 0.0, если в базе записан NULL.
+	// 2. Забираем ВСЕ задачи проекта (убрали фильтр по user_id)
 	query := `
 		SELECT 
 			id, project_id, user_id, title, status, opt, real, pess, 
 			COALESCE(duration_hours, 0.0), 
 			COALESCE(priority_score, 0.0) 
 		FROM tasks 
-		WHERE project_id = $1 AND user_id = $2
+		WHERE project_id = $1
 	`
 
-	rows, err := r.db.Query(query, projectID, userID)
+	// Передаем только projectID
+	rows, err := r.db.Query(query, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -213,7 +218,6 @@ func (r *TaskRepository) GetTasksByProject(projectID, userID int) ([]models.Task
 
 	for rows.Next() {
 		var t models.Task
-		// ИСПРАВЛЕНО: используем правильное поле DurationHours
 		if err := rows.Scan(
 			&t.ID, &t.ProjectID, &t.UserID, &t.Title, &t.Status,
 			&t.Opt, &t.Real, &t.Pess,

@@ -32,14 +32,10 @@ func NewProjectRepository(db *sql.DB) *ProjectRepository {
 // Получаем все проекты: и свои, и те, куда нас пригласили
 func (r *ProjectRepository) GetUserProjects(userID int) ([]models.Project, error) {
 	query := `
-    SELECT 
-        t.id, t.title, t.opt, t.real, t.pess, t.duration_hours, 
-        t.priority_score, t.user_id, t.project_id, t.status, t.created_at,
-        COALESCE(u.username, 'Система') as created_by_name
-    FROM tasks t
-    LEFT JOIN users u ON t.user_id = u.id
-    WHERE t.project_id = $1
-    ORDER BY t.priority_score DESC, t.created_at ASC
+    SELECT p.id, p.name, p.owner_id, pm.role 
+    FROM projects p
+    JOIN project_members pm ON p.id = pm.project_id
+    WHERE pm.user_id = $1
 `
 	rows, err := r.db.Query(query, userID)
 	if err != nil {

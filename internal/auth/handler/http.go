@@ -15,7 +15,6 @@ type AuthHandler struct {
 func NewAuthHandler(s *service.AuthService) *AuthHandler {
 	return &AuthHandler{service: s}
 }
-
 func (h *AuthHandler) InitRoutes() *gin.Engine {
 	r := gin.Default()
 
@@ -24,7 +23,15 @@ func (h *AuthHandler) InitRoutes() *gin.Engine {
 	r.POST("/register", h.register)
 	r.POST("/login", h.login)
 
+	// Добавляем маршрут, который ждет фронтенд
+	r.GET("/user/profile", h.getProfile)
+	r.PUT("/user/profile", h.updateProfile)
+
 	return r
+}
+
+func (h *AuthHandler) updateProfile(c *gin.Context) {
+	c.JSON(http.StatusOK, gin.H{"status": "success"})
 }
 
 func (h *AuthHandler) register(c *gin.Context) {
@@ -57,4 +64,13 @@ func (h *AuthHandler) login(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, models.AuthResponse{Token: token})
+}
+
+func (h *AuthHandler) getProfile(c *gin.Context) {
+	// Возвращаем JSON, чтобы App.jsx не падал с SyntaxError
+	c.JSON(http.StatusOK, gin.H{
+		"username": "Неизвестно",
+		"stack":    "",
+		"status":   "",
+	})
 }

@@ -1,0 +1,3429 @@
+
+
+--- FILE: README.md ---
+
+# SmartSync
+
+
+--- FILE: bench_test.go ---
+
+package main
+
+import (
+	"testing"
+)
+
+// Имитация алгоритма DFS для замера производительности
+func runDFS(nodeCount int) {
+	graph := make(map[int][]int)
+	durations := make(map[int]int)
+
+	// Генерируем тестовый граф
+	for i := 0; i < nodeCount; i++ {
+		durations[i] = 10
+		if i > 0 {
+			graph[i-1] = append(graph[i-1], i)
+		}
+	}
+
+	memo := make(map[int]float64)
+	var dfs func(int) float64
+	dfs = func(node int) float64 {
+		if val, exists := memo[node]; exists {
+			return val
+		}
+		maxChild := 0.0
+		for _, child := range graph[node] {
+			childWeight := dfs(child)
+			if childWeight > maxChild {
+				maxChild = childWeight
+			}
+		}
+		weight := float64(durations[node]) + maxChild
+		memo[node] = weight
+		return weight
+	}
+
+	for i := 0; i < nodeCount; i++ {
+		dfs(i)
+	}
+}
+
+// Бенчмарк для 100 задач
+func BenchmarkDFS_100(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		runDFS(100)
+	}
+}
+
+// Бенчмарк для 1000 задач
+func BenchmarkDFS_1000(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		runDFS(1000)
+	}
+}
+
+// Бенчмарк для 10000 задач
+func BenchmarkDFS_10000(b *testing.B) {
+	for i := 0; i < b.N; i++ {
+		runDFS(10000)
+	}
+}
+
+
+--- FILE: cmd\auth-service\main.go ---
+
+package main
+
+import (
+	"database/sql"
+	"log"
+
+	"smartsync/internal/auth/handler"
+	"smartsync/internal/auth/repository"
+	"smartsync/internal/auth/service"
+
+	_ "github.com/lib/pq"
+)
+
+func main() {
+	// Подключение к БД
+	db, err := sql.Open("postgres", "postgres://user:password@127.0.0.1:5433/smartsync?sslmode=disable")
+	if err != nil {
+		log.Fatal("Postgres error:", err)
+	}
+	defer db.Close()
+
+	// Сборка слоев
+	repo := repository.NewAuthRepository(db)
+	authService := service.NewAuthService(repo)
+	httpHandler := handler.NewAuthHandler(authService)
+
+	router := httpHandler.InitRoutes()
+
+	log.Println("Auth Service [JWT] запущен на порту 8081")
+	router.Run(":8081")
+}
+
+
+--- FILE: cmd\gateway\main.go ---
+
+package main
+
+import (
+	"fmt"
+	"log"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
+)
+
+var jwtSecret = []byte("smartsync_diploma_secret_key_2026")
+
+func main() {
+	r := gin.Default()
+
+	r.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE, PUT, PATCH")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	})
+
+	authProxy := reverseProxy("http://localhost:8081")
+	r.POST("/register", authProxy)
+	r.POST("/login", authProxy)
+
+	taskProxy := reverseProxy("http://localhost:8080")
+	protected := r.Group("/")
+	protected.Use(authMiddleware())
+	{
+		protected.POST("/tasks", taskProxy)
+		protected.PUT("/tasks/:id", taskProxy)
+		protected.DELETE("/tasks/:id", taskProxy)
+		protected.POST("/tasks/:id/dependencies", taskProxy)
+		protected.DELETE("/tasks/:id/dependencies/:dep_id", taskProxy)
+		protected.PATCH("/tasks/:id/status", taskProxy)
+
+		protected.GET("/user/profile", authProxy)
+		protected.PUT("/user/profile", authProxy)
+
+		protected.GET("/invitations/my", taskProxy)
+		protected.GET("/projects/:project_id/members", taskProxy)
+
+		protected.GET("/projects", taskProxy)
+		protected.POST("/projects", taskProxy)
+		protected.DELETE("/projects/:project_id", taskProxy)
+		protected.PUT("/projects/:project_id", taskProxy)
+		protected.POST("/projects/:project_id/members", taskProxy)
+		protected.DELETE("/projects/:project_id/dependencies", taskProxy)
+		protected.GET("/projects/:project_id/graph", taskProxy)
+		protected.GET("/projects/:project_id/tasks", taskProxy)
+	}
+
+	log.Println("API Gateway запущен на порту 8000")
+	r.Run(":8000")
+}
+
+// В файле main_2.go (Gateway)
+func authMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Требуется авторизация"})
+			return
+		}
+
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		token, err := jwt.Parse(tokenString, func(t *jwt.Token) (interface{}, error) {
+			return jwtSecret, nil
+		})
+
+		if err != nil || !token.Valid {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Неверный токен"})
+			return
+		}
+
+		// Достаем ID и прокидываем его в заголовке для других сервисов
+		claims, _ := token.Claims.(jwt.MapClaims)
+		userID := fmt.Sprintf("%v", claims["user_id"])
+		c.Request.Header.Set("X-User-ID", userID) // Проброс заголовка
+		c.Next()
+	}
+}
+
+func reverseProxy(target string) gin.HandlerFunc {
+	url, _ := url.Parse(target)
+	proxy := httputil.NewSingleHostReverseProxy(url)
+	return func(c *gin.Context) {
+		proxy.ServeHTTP(c.Writer, c.Request)
+	}
+}
+
+
+--- FILE: cmd\priority-service\main.go ---
+
+package main
+
+import (
+	"database/sql"
+	"encoding/json"
+	"log"
+
+	"smartsync/internal/engine/repository"
+	"smartsync/internal/engine/service"
+
+	_ "github.com/lib/pq"
+	"github.com/nats-io/nats.go"
+	"github.com/redis/go-redis/v9"
+)
+
+func main() {
+	db, err := sql.Open("postgres", "postgres://user:password@127.0.0.1:5433/smartsync?sslmode=disable")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	rdb := redis.NewClient(&redis.Options{Addr: "127.0.0.1:6379"})
+	nc, err := nats.Connect("nats://localhost:4222")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer nc.Close()
+
+	repo := repository.NewStorage(db)
+	calc := service.NewCalculator(repo, rdb)
+
+	nc.Subscribe("project.updated", func(m *nats.Msg) {
+		var payload struct {
+			ProjectID int `json:"project_id"`
+		}
+		json.Unmarshal(m.Data, &payload)
+
+		if payload.ProjectID != 0 {
+			calc.RecalculateGraph(payload.ProjectID)
+			log.Printf("Пересчитан граф для проекта %d\n", payload.ProjectID)
+		}
+	})
+
+	log.Println("Математический движок запущен и слушает события...")
+	select {}
+}
+
+
+--- FILE: cmd\task-service\main.go ---
+
+package main
+
+import (
+	"database/sql"
+	"log"
+
+	"smartsync/internal/handler"
+	"smartsync/internal/repository"
+	"smartsync/internal/service"
+
+	_ "github.com/lib/pq"
+	"github.com/nats-io/nats.go"
+	"github.com/redis/go-redis/v9"
+)
+
+func main() {
+	// Подключение к Postgres
+	db, err := sql.Open("postgres", "postgres://user:password@127.0.0.1:5433/smartsync?sslmode=disable")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	// Подключение к Redis
+	rdb := redis.NewClient(&redis.Options{Addr: "127.0.0.1:6379"})
+
+	// Подключение к NATS
+	nc, err := nats.Connect("nats://localhost:4222")
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer nc.Close()
+
+	// 1. Инициализация слоев БД
+	taskRepo := repository.NewTaskRepository(db)
+	projectRepo := repository.NewProjectRepository(db)
+
+	// 2. Инициализация бизнес-логики
+	taskService := service.NewTaskService(taskRepo, nc, rdb)
+	projectService := service.NewProjectService(projectRepo)
+
+	// 3. Сборка контроллера и запуск
+	httpHandler := handler.NewHandler(taskService, projectService)
+
+	router := httpHandler.InitRoutes()
+
+	log.Println("Task Service [Модульный] запущен на порту 8080")
+	router.Run(":8080")
+}
+
+
+--- FILE: db\init.sql ---
+
+CREATE TABLE IF NOT EXISTS users (
+    id SERIAL PRIMARY KEY,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS projects (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    owner_id INTEGER REFERENCES users(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS project_members (
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    role VARCHAR(20) DEFAULT 'member',
+    PRIMARY KEY (project_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    opt FLOAT,
+    real FLOAT,
+    pess FLOAT,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    status VARCHAR(20) DEFAULT 'todo',
+    duration_hours FLOAT,
+    priority_score FLOAT
+);
+
+CREATE TABLE IF NOT EXISTS dependencies (
+    task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+    depends_on_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+    UNIQUE(task_id, depends_on_id)
+);
+
+ALTER TABLE tasks 
+    ADD COLUMN opt INT DEFAULT 0,
+    ADD COLUMN real INT DEFAULT 0,
+    ADD COLUMN pess INT DEFAULT 0,
+    ADD COLUMN duration_hours DOUBLE PRECISION DEFAULT 0,
+    ADD COLUMN priority_score DOUBLE PRECISION DEFAULT 0,
+    ADD COLUMN user_id INT REFERENCES users(id);
+
+
+
+--- FILE: docker-compose.yml ---
+
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: smartsync
+    ports:
+      - "5433:5432"
+    volumes:
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  nats:
+    image: nats:latest
+    ports:
+      - "4222:4222"
+
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+
+--- FILE: frontend\.gitignore ---
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+
+--- FILE: frontend\README.md ---
+
+# React + Vite
+
+This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+
+Currently, two official plugins are available:
+
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react/README.md) uses [Babel](https://babeljs.io/) for Fast Refresh
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+
+
+--- FILE: frontend\eslint.config.js ---
+
+import js from '@eslint/js'
+import globals from 'globals'
+import react from 'eslint-plugin-react'
+import reactHooks from 'eslint-plugin-react-hooks'
+import reactRefresh from 'eslint-plugin-react-refresh'
+
+export default [
+  { ignores: ['dist'] },
+  {
+    files: ['**/*.{js,jsx}'],
+    languageOptions: {
+      ecmaVersion: 2020,
+      globals: globals.browser,
+      parserOptions: {
+        ecmaVersion: 'latest',
+        ecmaFeatures: { jsx: true },
+        sourceType: 'module',
+      },
+    },
+    settings: { react: { version: '18.3' } },
+    plugins: {
+      react,
+      'react-hooks': reactHooks,
+      'react-refresh': reactRefresh,
+    },
+    rules: {
+      ...js.configs.recommended.rules,
+      ...react.configs.recommended.rules,
+      ...react.configs['jsx-runtime'].rules,
+      ...reactHooks.configs.recommended.rules,
+      'react/jsx-no-target-blank': 'off',
+      'react-refresh/only-export-components': [
+        'warn',
+        { allowConstantExport: true },
+      ],
+    },
+  },
+]
+
+
+--- FILE: frontend\index.html ---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Vite + React</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
+
+
+--- FILE: frontend\src\App.jsx ---
+
+import { useState, useEffect, useCallback } from 'react'; // Добавили useCallback
+import { api } from './api/client';
+import MainLayout from './components/Layout/MainLayout';
+import Sidebar from './components/Sidebar/Sidebar';
+import KanbanBoard from './components/Kanban/KanbanBoard';
+import TaskGraph from './components/Graph/TaskGraph';
+import UserProfile from './components/Profile/UserProfile';
+
+export default function App() {
+  // 1. Сначала все стейты
+  const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('token'));
+  const [projects, setProjects] = useState([]);
+  const [currentProjectId, setCurrentProjectId] = useState(null);
+  const [activeView, setActiveView] = useState('graph');
+  const [invitations, setInvitations] = useState([]);
+  
+  const [authMode, setAuthMode] = useState('login');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+
+
+const loadInvitations = useCallback(async () => {
+    try {
+      const data = await api.get('/invitations/my');
+      setInvitations(data || []);
+    } catch (err) { console.error(err); }
+  }, []);
+
+  const loadProjects = useCallback(async () => {
+    try {
+      const data = await api.get('/projects');
+      setProjects(data || []);
+      if (data?.length > 0 && !currentProjectId) {
+        setCurrentProjectId(data[0].id);
+      }
+    } catch (err) { console.error('Ошибка загрузки проектов:', err); }
+  }, [currentProjectId]);
+
+  // 3. И ТОЛЬКО ПОТОМ используем их в useEffect
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadProjects();
+      loadInvitations();
+      
+      const interval = setInterval(() => {
+        loadProjects();
+        loadInvitations();
+      }, 10000); 
+
+      return () => clearInterval(interval);
+    }
+  }, [isAuthenticated, loadProjects, loadInvitations]);
+
+  const handleAuthSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    try {
+      const endpoint = authMode === 'register' ? '/register' : '/login';
+      const data = await api.post(endpoint, { username, password });
+      
+      if (authMode === 'register') {
+        alert('Успешно! Теперь войдите под своим логином.');
+        setAuthMode('login');
+        setPassword('');
+      } else {
+        localStorage.setItem('token', data.token);
+        setIsAuthenticated(true);
+      }
+    } catch (err) { 
+      setError(err.message); 
+    }
+  };
+
+  const logout = () => {
+    localStorage.removeItem('token');
+    setIsAuthenticated(false);
+  };
+
+  const currentProject = projects.find(p => p.id === currentProjectId);
+
+  if (isAuthenticated) {
+    return (
+      <div className="flex h-screen w-full">
+        <Sidebar 
+  projects={projects} 
+  currentProjectId={currentProjectId} 
+  onSelectProject={setCurrentProjectId}
+  onCreateProject={async (name) => {
+    await api.post('/projects', { name });
+    loadProjects();
+  }}
+  invitations={invitations} // ПРИКАЗ: Обязательно добавь эту строку!
+/>
+        <MainLayout 
+  projectName={currentProject?.name}
+  activeView={activeView}
+  onSwitchView={setActiveView}
+  onLogout={logout}
+>
+  {/* УСЛОВИЕ ДЛЯ ТРЕХ ВИДОВ */}
+  {activeView === 'kanban' ? (
+    <KanbanBoard projectId={currentProjectId} />
+  ) : activeView === 'profile' ? (
+    <UserProfile />
+  ) : (
+    <TaskGraph projectId={currentProjectId} />
+  )}
+</MainLayout>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-screen items-center justify-center bg-gray-900">
+      <div className="bg-white p-8 rounded-xl shadow-2xl w-96">
+        <h1 className="text-3xl font-black text-center text-blue-600 mb-6">SmartSync</h1>
+        <div className="flex gap-2 mb-6 border-b border-gray-200">
+          <button 
+            onClick={() => setAuthMode('login')} 
+            className={`flex-1 py-2 font-bold transition-colors ${authMode === 'login' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-400'}`}
+          >
+            Вход
+          </button>
+          <button 
+            onClick={() => setAuthMode('register')} 
+            className={`flex-1 py-2 font-bold transition-colors ${authMode === 'register' ? 'border-b-2 border-blue-600 text-blue-600' : 'text-gray-400'}`}
+          >
+            Регистрация
+          </button>
+        </div>
+
+        {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg font-medium">{error}</div>}
+
+        <form onSubmit={handleAuthSubmit} className="flex flex-col gap-4">
+          <input 
+            type="text" 
+            placeholder="Логин" 
+            value={username}
+            onChange={e => setUsername(e.target.value)}
+            className="border p-3 rounded-lg bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" 
+            required 
+          />
+          <input 
+            type="password" 
+            placeholder="Пароль" 
+            value={password}
+            onChange={e => setPassword(e.target.value)}
+            className="border p-3 rounded-lg bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" 
+            required 
+          />
+          <button type="submit" className="bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition shadow-lg mt-2">
+            {authMode === 'login' ? 'Войти' : 'Создать аккаунт'}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+--- FILE: frontend\src\api\client.js ---
+
+const GATEWAY = "http://localhost:8000";
+
+export const api = {
+  async request(endpoint, options = {}) {
+    const token = localStorage.getItem('token');
+  
+    const headers = {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    };
+
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`;
+    }
+
+    // Убираем возможный лишний слеш, если он есть в начале эндпоинта
+    const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    
+    const response = await fetch(`${GATEWAY}${cleanEndpoint}`, {
+      ...options,
+      headers,
+    });
+
+    if (response.status === 401) {
+      window.dispatchEvent(new Event('auth-expired'));
+      throw new Error('Unauthorized');
+    }
+    
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || 'Ошибка API');
+    return data;
+  },
+  
+  get(e) { return this.request(e); },
+  post(e, b) { return this.request(e, { method: 'POST', body: JSON.stringify(b) }); },
+  put(e, b) { return this.request(e, { method: 'PUT', body: JSON.stringify(b) }); },
+  patch(e, b) { return this.request(e, { method: 'PATCH', body: JSON.stringify(b) }); },
+  delete(e) { return this.request(e, { method: 'DELETE' }); }
+};
+
+--- FILE: frontend\src\components\Graph\TaskGraph.jsx ---
+
+import { useEffect, useRef, useCallback } from 'react';
+import PropTypes from 'prop-types';
+import { Network } from 'vis-network/standalone';
+import { api } from '../../api/client';
+
+export default function TaskGraph({ projectId }) {
+  const containerRef = useRef(null);
+  const networkRef = useRef(null);
+
+  const wouldCreateCycle = (fromId, toId, edges) => {
+    const adj = {};
+    edges.forEach(e => {
+      if (!adj[e.from]) adj[e.from] = [];
+      adj[e.from].push(e.to);
+    });
+    if (!adj[fromId]) adj[fromId] = [];
+    adj[fromId].push(toId);
+    const visited = new Set();
+    const stack = new Set();
+    const hasCycle = (node) => {
+      visited.add(node);
+      stack.add(node);
+      const neighbors = adj[node] || [];
+      for (let neighbor of neighbors) {
+        if (!visited.has(neighbor)) {
+          if (hasCycle(neighbor)) return true;
+        } else if (stack.has(neighbor)) return true;
+      }
+      stack.delete(node);
+      return false;
+    };
+    for (let node in adj) {
+      if (!visited.has(Number(node))) {
+        if (hasCycle(Number(node))) return true;
+      }
+    }
+    return false;
+  };
+
+  const loadGraphData = useCallback(async () => {
+    if (!projectId || !containerRef.current) return;
+    try {
+      const data = await api.get(`/projects/${projectId}/graph`);
+      const tasks = data?.tasks || data?.nodes || []; 
+      const dependencies = data?.dependencies || data?.edges || [];
+
+      const durations = {};
+      tasks.forEach(t => {
+        durations[t.id] = t.status === 'done' ? 0 : ((t.opt + 4 * t.real + t.pess) / 6);
+      });
+
+      const maxScore = tasks.length > 0 ? Math.max(...tasks.map(t => t.priority_score !== undefined ? t.priority_score : (t.PriorityScore || 0))) : 0;
+      const criticalSet = new Set();
+
+      tasks.forEach(t => {
+        const score = t.priority_score !== undefined ? t.priority_score : (t.PriorityScore || 0);
+        if (score >= maxScore - 0.1 && maxScore > 0) criticalSet.add(t.id);
+      });
+
+      let changed = true;
+      while(changed) {
+        changed = false;
+        dependencies.forEach(d => {
+          if (criticalSet.has(d.task_id) && !criticalSet.has(d.depends_on_id)) {
+            const parentScore = tasks.find(t => t.id === d.depends_on_id)?.priority_score || tasks.find(t => t.id === d.depends_on_id)?.PriorityScore || 0;
+            const childDur = durations[d.task_id] || 0;
+            const childScore = tasks.find(t => t.id === d.task_id)?.priority_score || tasks.find(t => t.id === d.task_id)?.PriorityScore || 0;
+            if (Math.abs(parentScore + childDur - childScore) < 0.1) {
+              criticalSet.add(d.depends_on_id);
+              changed = true;
+            }
+          }
+        });
+      }
+
+      const nodes = tasks.map(t => {
+        const score = t.priority_score !== undefined ? t.priority_score : t.PriorityScore || 0;
+        const isDone = t.status === 'done';
+        const isInProgress = t.status === 'in_progress';
+        const isCritical = criticalSet.has(t.id) && !isDone; 
+
+        let bg = '#ffffff', border = '#e5e7eb', text = '#1f2937'; 
+        if (isDone) { bg = '#dcfce7'; border = '#16a34a'; text = '#166534'; }
+        else if (isCritical) { bg = '#fee2e2'; border = '#ef4444'; text = '#991b1b'; }
+        else if (isInProgress) { bg = '#dbeafe'; border = '#2563eb'; text = '#1e3a8a'; }
+
+        return {
+          id: t.id,
+          label: `[${t.id}] ${t.title}\n${score.toFixed(1)}ч`,
+          color: { background: bg, border: border },
+          font: { size: 13, multi: true, color: text },
+          shape: 'box',
+          margin: 12,
+          borderWidth: 2,
+          shadow: isCritical ? { enabled: true, color: 'rgba(239, 68, 68, 0.2)', size: 10 } : false
+        };
+      });
+
+      const edges = dependencies.map(d => ({
+        id: `${d.depends_on_id}-${d.task_id}`,
+        from: d.depends_on_id, 
+        to: d.task_id,
+        arrows: 'to',
+        color: { color: '#cbd5e1', highlight: '#3b82f6' },
+        smooth: { type: 'cubicBezier', forceDirection: 'horizontal' }
+      }));
+
+      if (networkRef.current) networkRef.current.destroy();
+      networkRef.current = new Network(containerRef.current, { nodes, edges }, {
+        physics: { enabled: false },
+        layout: { hierarchical: { enabled: true, direction: 'LR', sortMethod: 'directed', levelSeparation: 200 } },
+        interaction: { multiselect: true, hover: true }
+      });
+
+      // Авто-масштаб после отрисовки
+      networkRef.current.once("afterDrawing", () => networkRef.current.fit());
+
+      networkRef.current.on("click", (params) => {
+        if (params.nodes.length === 2) {
+          const [from, to] = params.nodes;
+          const currentEdges = networkRef.current.body.data.edges.get();
+          if (wouldCreateCycle(from, to, currentEdges)) {
+            alert("Ошибка: Это приведет к циклу!");
+            networkRef.current.unselectAll();
+            return;
+          }
+          api.post(`/tasks/${to}/dependencies`, { depends_on_id: from })
+             .then(() => { networkRef.current.unselectAll(); setTimeout(loadGraphData, 300); })
+             .catch(err => { alert(err.message); networkRef.current.unselectAll(); });
+        }
+      });
+
+      networkRef.current.on("doubleClick", (params) => {
+        if (params.edges.length > 0) {
+          const edgeId = params.edges[0];
+          if (typeof edgeId === 'string' && edgeId.includes('-')) {
+            const [from, to] = edgeId.split('-');
+            if (confirm(`Удалить связь?`)) {
+              api.delete(`/tasks/${to}/dependencies/${from}`)
+                 .then(() => { networkRef.current.unselectAll(); setTimeout(loadGraphData, 300); })
+                 .catch(err => alert(err.message));
+            }
+          }
+        }
+      });
+    } catch (err) { console.error(err); }
+  }, [projectId]);
+
+  useEffect(() => {
+  loadGraphData();
+
+  // ПРИКАЗ: Граф тяжелее доски, поэтому опрашиваем чуть реже — раз в 15 секунд
+  const interval = setInterval(() => {
+    loadGraphData();
+  }, 15000);
+
+  return () => {
+    clearInterval(interval);
+    if (networkRef.current) networkRef.current.destroy();
+  };
+}, [loadGraphData]);
+
+  return (
+    <div className="h-full w-full bg-gray-50 p-6 overflow-hidden">
+      {/* ПРИКАЗ: Окно во всю ширину */}
+      <div className="w-full h-full flex flex-col bg-white rounded-2xl shadow-xl border overflow-hidden transition-all">
+        <div className="h-[72px] min-h-[72px] px-8 border-b flex justify-between items-center bg-white z-10">
+          <div>
+            <h3 className="font-bold text-gray-700 uppercase text-xs tracking-widest">Сетевой график</h3>
+            <p className="text-[10px] text-gray-400">Зеленый = Готово | Красный = Критический путь</p>
+          </div>
+          <button onClick={loadGraphData} className="text-xs font-bold bg-blue-600 text-white px-6 py-2.5 rounded-xl hover:bg-blue-700 transition-all shadow-md">
+            ОБНОВИТЬ ГРАФ
+          </button>
+        </div>
+        <div ref={containerRef} className="flex-1 w-full bg-white" />
+      </div>
+    </div>
+  );
+}
+
+TaskGraph.propTypes = { projectId: PropTypes.oneOfType([PropTypes.number, PropTypes.string]) };
+
+--- FILE: frontend\src\components\Kanban\KanbanBoard.jsx ---
+
+import { useState, useEffect, useCallback } from 'react';
+import PropTypes from 'prop-types';
+import { api } from '../../api/client';
+import { Plus, Trash2, AlertCircle } from 'lucide-react'; // Иконки используются ниже
+import TaskModal from './TaskModal';
+
+const COLUMNS = [
+  { id: 'todo', title: 'Бэклог', color: 'bg-gray-100' },
+  { id: 'in_progress', title: 'В работе', color: 'bg-blue-50' },
+  { id: 'done', title: 'Готово', color: 'bg-green-50' }
+];
+
+export default function KanbanBoard({ projectId }) {
+  const [tasks, setTasks] = useState([]);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState(null);
+
+  const loadTasks = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const data = await api.get(`/projects/${projectId}/tasks`);
+      setTasks(data || []);
+    } catch (err) { console.error(err); }
+  }, [projectId]);
+
+
+  const handleSaveTask = async (taskData) => {
+    try {
+      if (editingTask) await api.put(`/tasks/${editingTask.id}`, taskData);
+      else await api.post('/tasks', taskData);
+      setIsModalOpen(false);
+      setTimeout(loadTasks, 300);
+    } catch (err) { alert(err.message); }
+  };
+
+  // ФУНКЦИЯ ИСПОЛЬЗУЕТСЯ в карточке ниже
+  const deleteTask = async (e, id) => {
+    e.stopPropagation();
+    if (confirm('Удалить задачу?')) {
+      try {
+        await api.delete(`/tasks/${id}`);
+        setTimeout(loadTasks, 300);
+      } catch (err) { alert(err.message); }
+    }
+  };
+
+  const updateTaskStatus = async (taskId, newStatus) => {
+    try {
+      await api.patch(`/tasks/${taskId}/status`, { status: newStatus });
+      setTimeout(loadTasks, 300);
+    } catch (err) { console.error(err); }
+  };
+
+  useEffect(() => {
+  loadTasks(); // Загрузка при открытии
+
+  // ПРИКАЗ: Опрашивать бэкенд каждые 5 секунд, чтобы видеть перемещения задач коллегами
+  const interval = setInterval(() => {
+    loadTasks();
+  }, 5000);
+
+  return () => clearInterval(interval);
+}, [loadTasks]);
+  // maxScore ИСПОЛЬЗУЕТСЯ для расчета критического пути
+  const maxScore = tasks.length > 0 ? Math.max(...tasks.map(t => t.priority_score || 0)) : 0;
+
+  return (
+    <div className="h-full w-full bg-gray-50 p-6 overflow-hidden">
+      {/* ПРИКАЗ: Возвращаем bg-white вместо красного */}
+      <div className="w-full h-full flex flex-col bg-white rounded-2xl shadow-xl border overflow-hidden transition-all">
+        
+        {/* Хедер 72px */}
+        <div className="h-[72px] min-h-[72px] px-8 border-b flex justify-between items-center bg-white z-10">
+          <div>
+            <h3 className="font-bold text-gray-700 uppercase text-xs tracking-widest">Канбан-доска</h3>
+            <p className="text-[10px] text-gray-400">Управляйте задачами и их статусами</p>
+          </div>
+          <button 
+            onClick={() => { setEditingTask(null); setIsModalOpen(true); }}
+            className="bg-blue-600 text-white px-6 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-blue-700 transition-all shadow-md"
+          >
+            <Plus size={16} /> СОЗДАТЬ ЗАДАЧУ
+          </button>
+        </div>
+
+        <div className="flex-1 overflow-x-auto p-8">
+          <div className="flex gap-8 h-full">
+            {COLUMNS.map(col => (
+              <div key={col.id} className="flex-shrink-0 w-80 flex flex-col h-full">
+                <h3 className="font-bold text-gray-500 uppercase text-[10px] tracking-widest mb-4 px-2">
+                  {col.title} · {tasks.filter(t => t.status === col.id).length}
+                </h3>
+                <div 
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => updateTaskStatus(e.dataTransfer.getData('taskId'), col.id)}
+                  className={`flex-1 rounded-2xl p-3 space-y-4 border-2 border-dashed border-transparent ${col.color} overflow-y-auto`}
+                >
+                  {tasks.filter(t => t.status === col.id).map(task => {
+                    const isCritical = task.priority_score >= (maxScore * 0.8) && task.priority_score > 0 && task.status !== 'done';
+                    
+                    return (
+                      <div 
+                        key={task.id}
+                        draggable
+                        onDragStart={e => e.dataTransfer.setData('taskId', task.id)}
+                        onClick={() => { setEditingTask(task); setIsModalOpen(true); }}
+                        className={`bg-white p-5 rounded-2xl shadow-sm border-2 transition-all hover:shadow-lg group cursor-pointer ${
+                          isCritical ? 'border-red-200 bg-red-50/30' : 'border-transparent hover:border-gray-200'
+                        }`}
+                      >
+                        <div className="flex justify-between items-start">
+                          <span className={`text-[10px] font-black uppercase ${isCritical ? 'text-red-500' : 'text-blue-500'}`}>
+                            ID-{task.id}
+                          </span>
+                          <button 
+                            onClick={e => deleteTask(e, task.id)} 
+                            className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-opacity"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                        <h4 className="text-sm font-bold text-gray-800 mt-2">{task.title}</h4>
+<div className="flex items-center gap-2 mt-2">
+  <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center text-[8px] text-white">
+    {task.created_by_name?.charAt(0) || '?'}
+  </div>
+  <span className="text-[10px] text-gray-400">
+    {task.created_by_name || 'Система'}
+  </span>
+</div>
+
+
+
+{/* НОВОЕ: Отображение автора */}
+<p className="text-[9px] text-gray-400 mt-1 uppercase font-medium">
+  Автор: {task.created_by_name || 'Система'}
+</p>
+                        
+                        {isCritical && (
+                          <div className="flex items-center gap-1 text-[9px] text-red-600 font-bold mt-3 bg-red-100 w-fit px-2.5 py-1 rounded-full">
+                            <AlertCircle size={10} /> КРИТИЧЕСКИЙ ВЕС
+                          </div>
+                        )}
+
+                        <div className="mt-4 pt-4 border-t border-gray-50 flex items-center justify-between">
+                          <div className="text-[10px] bg-gray-100 text-gray-600 px-2.5 py-1.5 rounded-lg font-black">
+                            {task.priority_score.toFixed(1)}ч
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <TaskModal 
+          isOpen={isModalOpen} 
+          onClose={() => setIsModalOpen(false)} 
+          onSave={handleSaveTask} 
+          initialData={editingTask} 
+          projectId={projectId} 
+        />
+      </div>
+    </div>
+  );
+}
+
+KanbanBoard.propTypes = {
+  projectId: PropTypes.oneOfType([PropTypes.number, PropTypes.string])
+};
+
+--- FILE: frontend\src\components\Kanban\TaskModal.jsx ---
+
+import { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
+import { X } from 'lucide-react';
+
+export default function TaskModal({ isOpen, onClose, onSave, projectId, initialData }) {
+  const [formData, setFormData] = useState({
+    title: '',
+    opt: 1,
+    real: 2,
+    pess: 3,
+    status: 'todo'
+  });
+
+  // Когда модалка открывается, проверяем: это создание или редактирование?
+  useEffect(() => {
+    if (initialData) {
+      setFormData(initialData);
+    } else {
+      setFormData({ title: '', opt: 1, real: 2, pess: 3, status: 'todo' });
+    }
+  }, [initialData, isOpen]);
+
+  if (!isOpen) return null;
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    onSave({
+      ...formData,
+      opt: parseFloat(formData.opt),
+      real: parseFloat(formData.real),
+      pess: parseFloat(formData.pess),
+      project_id: projectId
+    });
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+        <div className="flex justify-between items-center p-6 border-b">
+          <h2 className="text-xl font-bold text-gray-800">
+            {initialData ? 'Редактировать задачу' : 'Новая задача'}
+          </h2>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
+            <X size={24} />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-1">Название задачи</label>
+            <input
+              required
+              className="w-full border rounded-lg p-2.5 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none"
+              value={formData.title}
+              onChange={e => setFormData({...formData, title: e.target.value})}
+            />
+          </div>
+
+          <div className="grid grid-cols-3 gap-3">
+            <div>
+              <label className="block text-[10px] font-black text-green-600 uppercase mb-1">Оптим.</label>
+              <input
+                type="number"
+                className="w-full border rounded-lg p-2 bg-gray-50"
+                value={formData.opt}
+                onChange={e => setFormData({...formData, opt: e.target.value})}
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-blue-600 uppercase mb-1">Реал.</label>
+              <input
+                type="number"
+                className="w-full border rounded-lg p-2 bg-gray-50"
+                value={formData.real}
+                onChange={e => setFormData({...formData, real: e.target.value})}
+              />
+            </div>
+            <div>
+              <label className="block text-[10px] font-black text-red-600 uppercase mb-1">Пессим.</label>
+              <input
+                type="number"
+                className="w-full border rounded-lg p-2 bg-gray-50"
+                value={formData.pess}
+                onChange={e => setFormData({...formData, pess: e.target.value})}
+              />
+            </div>
+          </div>
+
+          <div className="pt-4 flex gap-3">
+            <button type="button" onClick={onClose} className="flex-1 py-3 border rounded-xl font-bold">Отмена</button>
+            <button type="submit" className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold">
+              {initialData ? 'Сохранить' : 'Создать'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+TaskModal.propTypes = {
+  isOpen: PropTypes.bool.isRequired,
+  onClose: PropTypes.func.isRequired,
+  onSave: PropTypes.func.isRequired,
+  projectId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  initialData: PropTypes.object
+};
+
+--- FILE: frontend\src\components\Layout\MainLayout.jsx ---
+
+import PropTypes from 'prop-types';
+import { User, LogOut, LayoutGrid, Network } from 'lucide-react';
+
+export default function MainLayout({ children, activeView, onSwitchView, onLogout, projectName }) {
+  return (
+    <div className="flex-1 flex flex-col min-w-0 bg-gray-50 text-gray-900 overflow-hidden">
+      <header className="h-16 bg-white border-b border-gray-200 px-6 flex items-center justify-between shadow-sm z-20">
+        <h1 className="text-lg font-bold truncate text-gray-800">
+          {projectName || 'SmartSync'}
+        </h1>
+
+        <div className="flex items-center gap-6">
+          {/* Переключатель видов */}
+          <div className="flex bg-gray-100 p-1 rounded-lg border border-gray-200">
+            <button 
+              onClick={() => onSwitchView('graph')}
+              className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-bold transition-all ${
+                activeView === 'graph' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <Network size={16} /> Граф
+            </button>
+            <button 
+              onClick={() => onSwitchView('kanban')}
+              className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-bold transition-all ${
+                activeView === 'kanban' ? 'bg-white shadow text-blue-600' : 'text-gray-500 hover:text-gray-700'
+              }`}
+            >
+              <LayoutGrid size={16} /> Канбан
+            </button>
+          </div>
+
+          {/* Кнопки профиля и выхода */}
+          <div className="flex items-center gap-2 border-l pl-6 border-gray-100">
+            <button 
+              onClick={() => onSwitchView('profile')}
+              className={`p-2 rounded-lg transition-all ${activeView === 'profile' ? 'text-blue-600 bg-blue-50' : 'text-gray-400 hover:bg-gray-100'}`}
+            >
+              <User size={20} />
+            </button>
+            <button onClick={onLogout} className="p-2 text-gray-400 hover:text-red-500 transition-colors">
+              <LogOut size={20} />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <main className="flex-1 overflow-hidden relative w-full">
+        {children}
+      </main>
+    </div>
+  );
+}
+
+MainLayout.propTypes = {
+  children: PropTypes.node,
+  activeView: PropTypes.string.isRequired,
+  onSwitchView: PropTypes.func.isRequired,
+  onLogout: PropTypes.func.isRequired,
+  projectName: PropTypes.string
+};
+
+--- FILE: frontend\src\components\Profile\UserProfile.jsx ---
+
+import { useState, useEffect } from 'react';
+import { api } from '../../api/client';
+import { Save, User } from 'lucide-react';
+
+export default function UserProfile() {
+  const [profile, setProfile] = useState({
+    username: '',
+    full_name: 'Артем', // Можно добавить в БД
+    stack: 'Go, PostgreSQL, Docker',
+    status: 'Студент мехмата БГУ'
+  });
+
+  const loadProfile = async () => {
+    try {
+      const data = await api.get('/user/profile'); // Убедись, что эндпоинт есть в auth-service
+      if (data) setProfile(prev => ({ ...prev, ...data }));
+    } catch (err) { console.error(err); }
+  };
+
+  useEffect(() => { loadProfile(); }, []);
+
+  const handleSave = async () => {
+    try {
+      await api.put('/user/profile', profile);
+      alert('Данные успешно обновлены!');
+    } catch (err) { alert('Ошибка: ' + err.message); }
+  };
+
+  return (
+    <div className="h-full w-full bg-gray-50 p-6 overflow-hidden">
+      <div className="w-full h-full max-w-4xl mx-auto flex flex-col bg-white rounded-2xl shadow-xl border overflow-hidden">
+        <div className="h-[72px] px-8 border-b flex items-center justify-between bg-white">
+          <h3 className="font-bold text-gray-700 uppercase text-xs tracking-widest">Настройки профиля</h3>
+          <button onClick={handleSave} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 hover:bg-blue-700 transition-all">
+            <Save size={14} /> СОХРАНИТЬ
+          </button>
+        </div>
+        
+        <div className="p-8 space-y-6">
+          <div className="flex items-center gap-6 mb-4">
+            <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center shadow-inner">
+              <User size={40} />
+            </div>
+            <div>
+              <h2 className="text-xl font-bold text-gray-800">{profile.username}</h2>
+              <p className="text-sm text-gray-400">ID пользователя: {localStorage.getItem('userId') || '—'}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold text-gray-400 uppercase">Стек технологий</label>
+              <input 
+                className="w-full p-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                value={profile.stack}
+                onChange={e => setProfile({...profile, stack: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <label className="text-[10px] font-bold text-gray-400 uppercase">Статус / Вуз</label>
+              <input 
+                className="w-full p-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                value={profile.status}
+                onChange={e => setProfile({...profile, status: e.target.value})}
+              />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+--- FILE: frontend\src\components\Sidebar\Sidebar.jsx ---
+
+import { useState, useEffect, useCallback } from 'react'; // ИСПРАВЛЕНО: добавлены хуки
+import PropTypes from 'prop-types';
+import { Plus, Users, Send, Settings2, ShieldCheck } from 'lucide-react'; 
+import { api } from '../../api/client';
+
+export default function Sidebar({ projects, currentProjectId, onSelectProject, onCreateProject, invitations = [] }) {
+  const [inviteUser, setInviteUser] = useState('');
+  const [members, setMembers] = useState([]);
+
+  // Загрузка участников текущего проекта
+  const loadMembers = useCallback(async () => {
+    if (!currentProjectId) return;
+    try {
+      const data = await api.get(`/projects/${currentProjectId}/members`);
+      setMembers(data || []);
+    } catch (err) {
+      console.error('Ошибка загрузки участников:', err);
+    }
+  }, [currentProjectId]);
+
+const removeMember = async (userId) => {
+  if (!confirm('Удалить участника из проекта?')) return;
+  try {
+    await api.delete(`/projects/${currentProjectId}/members/${userId}`);
+    loadMembers(); // Обновляем список
+  } catch (err) { alert('Ошибка при удалении: ' + err.message); }
+};
+
+ const handleInvite = async (e) => {
+    e.preventDefault();
+    if (!inviteUser) return;
+    try {
+      await api.post(`/projects/${currentProjectId}/members`, { username: inviteUser });
+      alert(`Пользователь ${inviteUser} успешно добавлен!`);
+      setInviteUser('');
+      loadMembers(); // Обновляем список участников сразу после добавления
+    } catch (err) {
+      alert('Ошибка: ' + err.message);
+    }
+  };
+
+
+  useEffect(() => {
+    loadMembers();
+  }, [loadMembers]);
+
+ 
+
+  return (
+    <aside className="w-72 bg-white border-r border-gray-200 flex flex-col shadow-sm">
+      <div className="p-6 border-b border-gray-100">
+        <h2 className="text-xl font-black text-blue-600 tracking-tight italic">SmartSync.engine</h2>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-4 space-y-1">
+        <div className="flex items-center justify-between mb-4 px-2">
+          <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Проекты</span>
+          <button 
+            onClick={() => {
+              const name = prompt('Название нового проекта:');
+              if (name) onCreateProject(name);
+            }} 
+            className="text-blue-600 hover:bg-blue-50 p-1 rounded transition-colors"
+          >
+            <Plus size={16} />
+          </button>
+        </div>
+        
+        {projects.map(p => (
+          <div 
+            key={p.id}
+            onClick={() => onSelectProject(p.id)}
+            className={`group flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition-all ${
+              currentProjectId === p.id ? 'bg-blue-50 text-blue-700 shadow-sm font-bold' : 'text-gray-600 hover:bg-gray-50'
+            }`}
+          >
+            <span className="truncate text-sm font-medium">{p.name}</span>
+            <Settings2 size={14} className="opacity-0 group-hover:opacity-100 text-gray-400" />
+          </div>
+        ))}
+      </div>
+
+      {/* Входящие приглашения (уже было добавлено) */}
+      {invitations.length > 0 && (
+        <div className="p-4 border-t border-gray-100 bg-blue-50/30">
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-3 px-2">Приглашения</span>
+          <div className="space-y-2">
+            {invitations.map(inv => (
+              <div key={inv.id} className="bg-white p-3 rounded-xl border border-blue-100 shadow-sm">
+                <p className="text-[11px] text-blue-800 font-medium mb-2">Проект: {inv.project_name}</p>
+                <button className="w-full bg-blue-600 text-white text-[10px] font-bold py-1.5 rounded-lg hover:bg-blue-700">
+                  ПРИНЯТЬ
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* НОВОЕ: СПИСОК УЧАСТНИКОВ И ФОРМА ПРИГЛАШЕНИЯ */}
+      {currentProjectId && (
+        <div className="p-4 border-t border-gray-100 bg-gray-50/50">
+          <div className="flex items-center gap-2 mb-3 px-2 text-gray-500">
+            <Users size={14} />
+            <span className="text-[10px] font-bold uppercase tracking-widest">Участники</span>
+          </div>
+
+          {/* Отрисовка списка людей из стейта members */}
+          <div className="space-y-2 mb-4 max-h-40 overflow-y-auto px-1">
+            {members.map(member => (
+  <div key={member.id} className="flex items-center justify-between text-xs py-2 border-b border-gray-50 last:border-0 group">
+    <div className="flex flex-col">
+      <span className="text-gray-800 font-semibold">{member.username}</span>
+      <span className={`text-[9px] uppercase font-bold ${member.role === 'owner' ? 'text-blue-500' : 'text-gray-400'}`}>
+        {member.role}
+      </span>
+    </div>
+    
+    {/* ПРИКАЗ: Кнопка удаления видна только если это не владелец и текущий юзер имеет права */}
+    {member.role !== 'owner' && (
+      <button 
+        onClick={() => removeMember(member.id)}
+        className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all p-1"
+        title="Удалить из проекта"
+      >
+        <Plus size={14} className="rotate-45" /> 
+      </button>
+    )}
+  </div>
+))}
+          </div>
+
+          <form onSubmit={handleInvite} className="relative">
+            <input 
+              type="text" 
+              placeholder="Логин коллеги..." 
+              value={inviteUser}
+              onChange={e => setInviteUser(e.target.value)}
+              className="w-full text-xs border border-gray-200 rounded-lg pl-3 pr-8 py-2 outline-none focus:ring-2 focus:ring-blue-500 bg-white shadow-inner" 
+            />
+            <button type="submit" className="absolute right-2 top-1.5 text-blue-600 hover:text-blue-800 transition-colors">
+              <Send size={14} />
+            </button>
+          </form>
+        </div>
+      )}
+    </aside>
+  );
+}
+
+Sidebar.propTypes = {
+  projects: PropTypes.array.isRequired,
+  currentProjectId: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  onSelectProject: PropTypes.func.isRequired,
+  onCreateProject: PropTypes.func.isRequired,
+  invitations: PropTypes.array
+};
+
+--- FILE: frontend\src\index.css ---
+
+/* index.css */
+@import "tailwindcss";
+
+/* ПРИКАЗ: Фиксируем высоту на всех уровнях */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* Весь экран не скроллится, только контент внутри */
+}
+
+body {
+  background-color: #f9fafb;
+  color: #111827;
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+--- FILE: frontend\src\main.jsx ---
+
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import App from './App.jsx'
+
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <App />
+  </StrictMode>,
+)
+
+
+--- FILE: frontend\vite.config.js ---
+
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+
+export default defineConfig({
+  plugins: [
+    react(),
+    tailwindcss(),
+  ],
+})
+
+--- FILE: go.mod ---
+
+module smartsync
+
+go 1.25.5
+
+require (
+	github.com/gin-gonic/gin v1.12.0
+	github.com/lib/pq v1.12.3
+	github.com/nats-io/nats.go v1.51.0
+)
+
+require (
+	github.com/bytedance/gopkg v0.1.3 // indirect
+	github.com/bytedance/sonic v1.15.0 // indirect
+	github.com/bytedance/sonic/loader v0.5.0 // indirect
+	github.com/cespare/xxhash/v2 v2.3.0 // indirect
+	github.com/cloudwego/base64x v0.1.6 // indirect
+	github.com/dgryski/go-rendezvous v0.0.0-20200823014737-9f7001d12a5f // indirect
+	github.com/gabriel-vasile/mimetype v1.4.12 // indirect
+	github.com/gin-contrib/sse v1.1.0 // indirect
+	github.com/go-playground/locales v0.14.1 // indirect
+	github.com/go-playground/universal-translator v0.18.1 // indirect
+	github.com/go-playground/validator/v10 v10.30.1 // indirect
+	github.com/goccy/go-json v0.10.5 // indirect
+	github.com/goccy/go-yaml v1.19.2 // indirect
+	github.com/golang-jwt/jwt/v5 v5.3.1 // indirect
+	github.com/json-iterator/go v1.1.12 // indirect
+	github.com/klauspost/compress v1.18.5 // indirect
+	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
+	github.com/leodido/go-urn v1.4.0 // indirect
+	github.com/mattn/go-isatty v0.0.20 // indirect
+	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
+	github.com/modern-go/reflect2 v1.0.2 // indirect
+	github.com/nats-io/nkeys v0.4.15 // indirect
+	github.com/nats-io/nuid v1.0.1 // indirect
+	github.com/pelletier/go-toml/v2 v2.2.4 // indirect
+	github.com/quic-go/qpack v0.6.0 // indirect
+	github.com/quic-go/quic-go v0.59.0 // indirect
+	github.com/redis/go-redis/v9 v9.18.0 // indirect
+	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
+	github.com/ugorji/go/codec v1.3.1 // indirect
+	go.mongodb.org/mongo-driver/v2 v2.5.0 // indirect
+	go.uber.org/atomic v1.11.0 // indirect
+	golang.org/x/arch v0.22.0 // indirect
+	golang.org/x/crypto v0.50.0 // indirect
+	golang.org/x/net v0.52.0 // indirect
+	golang.org/x/sys v0.43.0 // indirect
+	golang.org/x/text v0.36.0 // indirect
+	google.golang.org/protobuf v1.36.10 // indirect
+)
+
+
+--- FILE: index.html ---
+
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SmartSync - Управление проектами</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
+</head>
+<body class="bg-gray-50 h-screen flex overflow-hidden font-sans">
+
+    <div id="authScreen" class="absolute inset-0 bg-gray-900 z-50 flex items-center justify-center">
+        <div class="bg-white p-8 rounded-xl shadow-2xl w-96">
+            <h1 class="text-3xl font-black text-center text-blue-600 mb-6">SmartSync</h1>
+            <div class="flex gap-2 mb-6">
+                <button onclick="setAuthMode('login')" id="tabLogin" class="flex-1 py-2 font-bold border-b-2 border-blue-600 text-blue-600">Вход</button>
+                <button onclick="setAuthMode('register')" id="tabReg" class="flex-1 py-2 font-bold border-b-2 border-transparent text-gray-500">Регистрация</button>
+            </div>
+            <form id="authForm" class="flex flex-col gap-4">
+                <input type="text" id="a_user" placeholder="Имя пользователя" class="border p-3 rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" required>
+                <input type="password" id="a_pass" placeholder="Пароль" class="border p-3 rounded-lg bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none" required>
+                <button type="submit" class="bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition mt-2 shadow-lg">Войти</button>
+            </form>
+        </div>
+    </div>
+
+    <div id="projectSettingsModal" class="absolute inset-0 bg-gray-900 bg-opacity-50 z-50 flex items-center justify-center hidden">
+        <div class="bg-white p-6 rounded-xl shadow-2xl w-96 relative">
+            <div class="flex justify-between items-center mb-4 border-b pb-2">
+                <h2 class="text-xl font-black text-gray-800">Настройки проекта</h2>
+                <button onclick="closeProjectSettings()" class="text-gray-400 hover:text-red-500 font-bold text-lg">✕</button>
+            </div>
+
+            <div id="ownerControls">
+                <div class="mb-4">
+                    <label class="text-xs text-gray-500 font-bold uppercase tracking-wide">Переименовать</label>
+                    <div class="flex gap-2 mt-1">
+                        <input type="text" id="editProjectName" class="border p-2 rounded flex-1 text-sm outline-none focus:border-blue-500">
+                        <button onclick="renameCurrentProject()" class="bg-blue-600 text-white px-3 py-2 rounded text-sm font-bold shadow hover:bg-blue-700">OK</button>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="text-xs text-gray-500 font-bold uppercase tracking-wide">Пригласить участника</label>
+                    <div class="flex gap-2 mt-1">
+                        <input type="text" id="inviteUsername" placeholder="Введи логин друга" class="border p-2 rounded flex-1 text-sm outline-none focus:border-green-500">
+                        <button onclick="inviteToProject()" class="bg-green-600 text-white px-3 py-2 rounded text-sm font-bold shadow hover:bg-green-700">✚</button>
+                    </div>
+                </div>
+
+                <div class="mt-6 pt-4 border-t border-red-100">
+                    <button onclick="deleteCurrentProject()" class="w-full bg-red-50 text-red-600 px-4 py-2 rounded-lg text-sm font-bold hover:bg-red-100 hover:text-red-700 transition">🗑 Удалить проект навсегда</button>
+                </div>
+            </div>
+
+            <div id="guestMessage" class="hidden text-sm text-gray-500 text-center py-6 bg-gray-50 rounded-lg border border-dashed border-gray-300">
+                Ты приглашен в этот проект как участник.<br>Управлять настройками может только создатель.
+            </div>
+        </div>
+    </div>
+
+    <aside class="w-64 bg-white border-r border-gray-200 flex flex-col hidden" id="sidebar">
+        <div class="p-6 border-b border-gray-100 flex justify-between items-center">
+            <h2 class="text-xl font-black text-gray-800">Проекты</h2>
+            <button onclick="logout()" class="text-xs text-red-500 font-bold hover:underline">Выход</button>
+        </div>
+        <div class="p-4">
+            <form id="projectForm" class="flex gap-2">
+                <input type="text" id="p_name" placeholder="Новый проект..." class="border p-2 rounded w-full text-sm outline-none focus:border-blue-500" required>
+                <button type="submit" class="bg-gray-800 text-white px-3 rounded font-bold hover:bg-gray-700">+</button>
+            </form>
+        </div>
+        <ul id="projectList" class="flex-1 overflow-y-auto px-2 space-y-1">
+            </ul>
+    </aside>
+
+    <main class="flex-1 flex flex-col relative hidden" id="mainApp">
+        <header class="bg-white border-b border-gray-200 p-4 flex gap-6 items-start shadow-sm z-10">
+            <form id="taskForm" class="flex gap-2 items-center border-r pr-6 border-gray-200">
+                <input type="text" id="t_title" placeholder="Название задачи" class="border p-2 rounded w-48 text-sm" required>
+                <input type="number" id="t_opt" placeholder="Опт (ч)" class="border p-2 rounded w-20 text-sm" required>
+                <input type="number" id="t_real" placeholder="Реал (ч)" class="border p-2 rounded w-20 text-sm" required>
+                <input type="number" id="t_pess" placeholder="Песс (ч)" class="border p-2 rounded w-20 text-sm" required>
+                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded text-sm font-bold shadow hover:bg-blue-700 transition">Добавить</button>
+            </form>
+
+            <form id="depForm" class="flex gap-2 items-center border-r pr-6 border-gray-200">
+                <input type="number" id="d_parent" placeholder="ID (От кого зависит)" class="border p-2 rounded w-40 text-sm" required>
+                <input type="number" id="d_child" placeholder="ID (Кто зависит)" class="border p-2 rounded w-40 text-sm" required>
+                <button type="submit" class="bg-green-600 text-white px-4 py-2 rounded text-sm font-bold shadow hover:bg-green-700 transition">Связать</button>
+            </form>
+
+            <button onclick="resetDeps()" class="bg-gray-100 text-gray-700 px-4 py-2 rounded text-sm font-bold shadow-sm hover:bg-gray-200 transition ml-auto">
+                Сбросить стрелки
+            </button>
+        </header>
+
+        <div id="editMenu" class="absolute top-24 left-6 bg-white p-4 rounded-xl shadow-xl border border-gray-200 hidden z-20 w-64">
+            <h3 class="font-bold text-sm mb-3 text-gray-700 border-b pb-2">Редактировать задачу</h3>
+            <input type="text" id="e_title" class="w-full border p-2 rounded mb-3 text-sm focus:border-blue-500 outline-none" placeholder="Название">
+            <div class="grid grid-cols-3 gap-2 mb-3">
+                <div><label class="text-xs text-gray-500">Опт</label><input type="number" id="e_opt" class="border p-1.5 w-full rounded text-sm text-center"></div>
+                <div><label class="text-xs text-gray-500">Реал</label><input type="number" id="e_real" class="border p-1.5 w-full rounded text-sm text-center"></div>
+                <div><label class="text-xs text-gray-500">Песс</label><input type="number" id="e_pess" class="border p-1.5 w-full rounded text-sm text-center"></div>
+            </div>
+            <div class="flex gap-2">
+                <button onclick="saveEdit()" class="bg-blue-600 text-white px-3 py-2 flex-1 rounded text-sm font-bold shadow">Сохранить</button>
+                <button onclick="closeEdit()" class="bg-gray-100 text-gray-700 px-3 py-2 rounded text-sm font-bold">Отмена</button>
+            </div>
+        </div>
+
+        <div id="deleteMenu" class="absolute top-24 right-6 flex flex-col gap-2 hidden z-20">
+            <button onclick="deleteSelectedNode(false)" class="bg-red-600 text-white px-4 py-3 rounded-lg text-sm font-bold shadow-lg hover:bg-red-700 transition flex items-center justify-between">
+                <span>🗑 Удалить (Разорвать)</span>
+            </button>
+            <button onclick="deleteSelectedNode(true)" class="bg-orange-500 text-white px-4 py-3 rounded-lg text-sm font-bold shadow-lg hover:bg-orange-600 transition flex items-center justify-between">
+                <span>🔗 Удалить (Сшить края)</span>
+            </button>
+        </div>
+
+        <div id="mynetwork" class="flex-1 bg-gray-50"></div>
+    </main>
+
+    <script>
+        const GATEWAY = "http://localhost:8000";
+        let token = localStorage.getItem('token');
+        let authMode = 'login';
+        let currentProjectId = null;
+        let network = null;
+
+        // --- АВТОРИЗАЦИЯ ---
+        function setAuthMode(mode) {
+            authMode = mode;
+            document.getElementById('tabLogin').className = mode === 'login' ? "flex-1 py-2 font-bold border-b-2 border-blue-600 text-blue-600" : "flex-1 py-2 font-bold border-b-2 border-transparent text-gray-500";
+            document.getElementById('tabReg').className = mode === 'register' ? "flex-1 py-2 font-bold border-b-2 border-blue-600 text-blue-600" : "flex-1 py-2 font-bold border-b-2 border-transparent text-gray-500";
+            document.querySelector('#authForm button').innerText = mode === 'login' ? "Войти" : "Зарегистрироваться";
+        }
+
+        document.getElementById('authForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const res = await fetch(`${GATEWAY}/${authMode}`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    username: document.getElementById('a_user').value,
+                    password: document.getElementById('a_pass').value
+                })
+            });
+            const data = await res.json();
+            if (res.ok) {
+                if (authMode === 'register') {
+                    alert('Успешно! Теперь войдите.');
+                    setAuthMode('login');
+                } else {
+                    token = data.token;
+                    localStorage.setItem('token', token);
+                    checkSession();
+                }
+            } else { alert(data.error); }
+        };
+
+        function logout() {
+            localStorage.removeItem('token');
+            token = null;
+            checkSession();
+        }
+
+        async function checkSession() {
+            if (token) {
+                document.getElementById('authScreen').classList.add('hidden');
+                document.getElementById('sidebar').classList.remove('hidden');
+                document.getElementById('mainApp').classList.remove('hidden');
+                await loadProjects();
+            } else {
+                document.getElementById('authScreen').classList.remove('hidden');
+                document.getElementById('sidebar').classList.add('hidden');
+                document.getElementById('mainApp').classList.add('hidden');
+            }
+        }
+
+        // --- ПРОЕКТЫ ---
+        document.getElementById('projectForm').onsubmit = async (e) => {
+            e.preventDefault();
+            await fetch(`${GATEWAY}/projects`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+                body: JSON.stringify({ name: document.getElementById('p_name').value })
+            });
+            e.target.reset();
+            loadProjects();
+        };
+
+        async function loadProjects() {
+            const res = await fetch(`${GATEWAY}/projects`, { headers: {'Authorization': `Bearer ${token}`} });
+            if (res.status === 401) return logout();
+            const projects = await res.json();
+            
+            const list = document.getElementById('projectList');
+            list.innerHTML = '';
+            
+            projects.forEach(p => {
+                const li = document.createElement('li');
+                const isActive = currentProjectId === p.id;
+                li.className = `p-2 rounded-lg cursor-pointer flex justify-between items-center transition ${isActive ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-100'}`;
+                
+                // Если мы гость, вешаем красивый фиолетовый бейдж
+                let roleBadge = p.role === 'owner' ? '' : `<span class="text-[10px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full ml-2 font-bold">гость</span>`;
+                
+                li.innerHTML = `
+                    <div class="flex-1 font-medium text-sm truncate flex items-center" onclick="selectProject(${p.id})">
+                        ${p.name} ${roleBadge}
+                    </div>
+                    <button onclick="openProjectSettings(${p.id}, '${p.name}', '${p.role}')" class="text-gray-400 hover:text-gray-800 px-2 text-lg transition">⚙️</button>
+                `;
+                list.appendChild(li);
+            });
+
+            if (projects.length > 0 && !currentProjectId) {
+                selectProject(projects[0].id);
+            }
+        }
+
+        // --- УПРАВЛЕНИЕ НАСТРОЙКАМИ ПРОЕКТА ---
+        let editingProjectId = null;
+
+        function openProjectSettings(id, name, role) {
+            editingProjectId = id;
+            document.getElementById('projectSettingsModal').classList.remove('hidden');
+            document.getElementById('editProjectName').value = name;
+            
+            if (role === 'owner') {
+                document.getElementById('ownerControls').classList.remove('hidden');
+                document.getElementById('guestMessage').classList.add('hidden');
+            } else {
+                document.getElementById('ownerControls').classList.add('hidden');
+                document.getElementById('guestMessage').classList.remove('hidden');
+            }
+        }
+
+        function closeProjectSettings() {
+            document.getElementById('projectSettingsModal').classList.add('hidden');
+            editingProjectId = null;
+        }
+
+        async function renameCurrentProject() {
+            const newName = document.getElementById('editProjectName').value;
+            await fetch(`${GATEWAY}/projects/${editingProjectId}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+                body: JSON.stringify({ name: newName })
+            });
+            closeProjectSettings();
+            loadProjects();
+        }
+
+        async function deleteCurrentProject() {
+            if (!confirm("Точно удалить проект? Все задачи и связи будут безвозвратно стерты!")) return;
+            await fetch(`${GATEWAY}/projects/${editingProjectId}`, {
+                method: 'DELETE',
+                headers: {'Authorization': `Bearer ${token}`}
+            });
+            currentProjectId = null; // Сбрасываем выбранный проект
+            closeProjectSettings();
+            loadProjects(); // Загрузит список и выберет первый доступный проект
+        }
+
+        async function inviteToProject() {
+            const username = document.getElementById('inviteUsername').value;
+            const res = await fetch(`${GATEWAY}/projects/${editingProjectId}/members`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+                body: JSON.stringify({ username: username })
+            });
+            
+            const data = await res.json();
+            if (res.ok) {
+                alert("Пользователь успешно приглашен!");
+                document.getElementById('inviteUsername').value = '';
+            } else {
+                alert("Ошибка: " + data.error);
+            }
+        }
+
+        function selectProject(id) {
+            currentProjectId = id;
+            loadProjects(); // Перерисовываем список для подсветки активного
+            loadGraph();
+        }
+
+        // --- ЗАДАЧИ И ГРАФ ---
+        document.getElementById('taskForm').onsubmit = async (e) => {
+            e.preventDefault();
+            if(!currentProjectId) return alert("Выберите проект!");
+            await fetch(`${GATEWAY}/tasks`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+                body: JSON.stringify({
+                    project_id: currentProjectId, // ТЕПЕРЬ ПРИВЯЗЫВАЕМ К ПРОЕКТУ!
+                    title: document.getElementById('t_title').value,
+                    opt: parseInt(document.getElementById('t_opt').value) || 1,
+                    real: parseInt(document.getElementById('t_real').value) || 1,
+                    pess: parseInt(document.getElementById('t_pess').value) || 1
+                })
+            });
+            e.target.reset();
+            setTimeout(loadGraph, 400); 
+        };
+
+        document.getElementById('depForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const taskId = document.getElementById('d_child').value;
+            const dependsOnId = document.getElementById('d_parent').value;
+            await fetch(`${GATEWAY}/tasks/${taskId}/dependencies`, {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+                body: JSON.stringify({ depends_on_id: parseInt(dependsOnId) })
+            });
+            e.target.reset();
+            setTimeout(loadGraph, 400); 
+        };
+
+        async function resetDeps() {
+            if (!currentProjectId || !confirm("Удалить все связи в этом проекте?")) return;
+            await fetch(`${GATEWAY}/projects/${currentProjectId}/dependencies`, { // СБРОС ТОЛЬКО В ПРОЕКТЕ
+                method: 'DELETE',
+                headers: {'Authorization': `Bearer ${token}`} 
+            });
+            setTimeout(loadGraph, 400); 
+        }
+
+        // --- УДАЛЕНИЕ И РЕДАКТИРОВАНИЕ ---
+        window.deleteSelectedNode = async (heal) => {
+            const actionText = heal ? "Удалить и сшить соседей напрямую?" : "Разорвать связи и удалить?";
+            if (!confirm(actionText)) return;
+            
+            const selectedNodes = network.getSelectedNodes(); 
+            if (selectedNodes.length === 0) return;
+            
+            await fetch(`${GATEWAY}/tasks/${selectedNodes[0]}?heal=${heal}`, {
+                method: 'DELETE',
+                headers: {'Authorization': `Bearer ${token}`}
+            });
+            document.getElementById('deleteMenu').classList.add('hidden');
+            setTimeout(loadGraph, 400); 
+        };
+
+        window.closeEdit = () => document.getElementById('editMenu').classList.add('hidden');
+
+        window.saveEdit = async () => {
+            const selectedNodes = network.getSelectedNodes(); 
+            if (selectedNodes.length === 0) return;
+            
+            await fetch(`${GATEWAY}/tasks/${selectedNodes[0]}`, {
+                method: 'PUT',
+                headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
+                body: JSON.stringify({
+                    title: document.getElementById('e_title').value,
+                    opt: parseInt(document.getElementById('e_opt').value),
+                    real: parseInt(document.getElementById('e_real').value),
+                    pess: parseInt(document.getElementById('e_pess').value)
+                })
+            });
+            closeEdit();
+            setTimeout(loadGraph, 400); 
+        };
+
+        // --- ОТРИСОВКА ГРАФА ---
+        let currentGraphData = null;
+
+        async function loadGraph() {
+            if (!currentProjectId) return;
+            // ЗАПРАШИВАЕМ ГРАФ ТОЛЬКО ДЛЯ ВЫБРАННОГО ПРОЕКТА
+            const res = await fetch(`${GATEWAY}/projects/${currentProjectId}/graph`, { headers: {'Authorization': `Bearer ${token}`} });
+            const data = await res.json();
+            currentGraphData = data;
+
+            const nodes = new vis.DataSet(data.nodes?.map(t => ({
+                id: t.id,
+                label: `[${t.id}] ${t.title}\nPrior: ${t.priority_score.toFixed(1)}h`,
+                shape: 'box',
+                color: { background: '#ffffff', border: '#cbd5e1' },
+                font: { size: 14, color: '#1e293b', face: 'system-ui' },
+                margin: 10,
+                shadow: true
+            })) || []);
+
+            const edges = new vis.DataSet(data.edges?.map(e => ({
+                from: e.from,
+                to: e.to,
+                arrows: 'to',
+                color: { color: '#94a3b8' },
+                smooth: { type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.4 }
+            })) || []);
+
+            if (network) network.destroy(); // Удаляем старый граф перед отрисовкой нового
+
+            network = new vis.Network(document.getElementById('mynetwork'), {nodes, edges}, {
+                layout: { hierarchical: { direction: 'LR', sortMethod: 'directed', levelSeparation: 200 } },
+                physics: false,
+                interaction: { hover: true, multiselect: false }
+            });
+
+            network.on("selectNode", function (params) {
+                document.getElementById('deleteMenu').classList.remove('hidden');
+                const nodeId = params.nodes[0];
+                const nodeData = currentGraphData.nodes.find(n => n.id === nodeId); 
+                
+                if (nodeData) {
+                    document.getElementById('editMenu').classList.remove('hidden');
+                    document.getElementById('e_title').value = nodeData.title;
+                    document.getElementById('e_opt').value = nodeData.opt;
+                    document.getElementById('e_real').value = nodeData.real;
+                    document.getElementById('e_pess').value = nodeData.pess;
+                }
+            });
+
+            network.on("deselectNode", function () {
+                document.getElementById('deleteMenu').classList.add('hidden');
+                document.getElementById('editMenu').classList.add('hidden');
+            });
+        }
+
+        // Запуск
+        checkSession();
+    </script>
+</body>
+</html>
+
+--- FILE: internal\auth\handler\http.go ---
+
+package handler
+
+import (
+	"net/http"
+	"smartsync/internal/auth/models"
+	"smartsync/internal/auth/service"
+
+	"github.com/gin-gonic/gin"
+)
+
+type AuthHandler struct {
+	service *service.AuthService
+}
+
+func NewAuthHandler(s *service.AuthService) *AuthHandler {
+	return &AuthHandler{service: s}
+}
+func (h *AuthHandler) InitRoutes() *gin.Engine {
+	r := gin.Default()
+
+	// Настройка CORS
+
+	r.POST("/register", h.register)
+	r.POST("/login", h.login)
+
+	// Добавляем маршрут, который ждет фронтенд
+	r.GET("/user/profile", h.getProfile)
+
+	return r
+}
+
+func (h *AuthHandler) register(c *gin.Context) {
+	var req models.AuthRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат запроса"})
+		return
+	}
+
+	id, err := h.service.Register(req)
+	if err != nil {
+		c.JSON(http.StatusConflict, gin.H{"error": "Имя пользователя уже занято"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{"message": "Пользователь успешно зарегистрирован", "user_id": id})
+}
+
+func (h *AuthHandler) login(c *gin.Context) {
+	var req models.AuthRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат запроса"})
+		return
+	}
+
+	token, err := h.service.Login(req)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, models.AuthResponse{Token: token})
+}
+
+func (h *AuthHandler) getProfile(c *gin.Context) {
+	// Возвращаем JSON, чтобы App.jsx не падал с SyntaxError
+	c.JSON(http.StatusOK, gin.H{
+		"username": "Неизвестно",
+		"stack":    "",
+		"status":   "",
+	})
+}
+
+
+--- FILE: internal\auth\models\user.go ---
+
+package models
+
+import "time"
+
+type User struct {
+	ID           int       `json:"id"`
+	Username     string    `json:"username"`
+	PasswordHash string    `json:"-"` // Запрещаем вывод хэша в JSON
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type AuthRequest struct {
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required"`
+}
+
+type AuthResponse struct {
+	Token string `json:"token"`
+}
+
+
+--- FILE: internal\auth\repository\postgres.go ---
+
+package repository
+
+import (
+	"database/sql"
+	"smartsync/internal/auth/models"
+)
+
+type AuthRepository struct {
+	db *sql.DB
+}
+
+func NewAuthRepository(db *sql.DB) *AuthRepository {
+	// Автоматическая миграция таблицы пользователей
+	db.Exec(`CREATE TABLE IF NOT EXISTS users (
+		id SERIAL PRIMARY KEY,
+		username VARCHAR(50) UNIQUE NOT NULL,
+		password_hash VARCHAR(255) NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+	)`)
+	return &AuthRepository{db: db}
+}
+
+func (r *AuthRepository) CreateUser(username, passwordHash string) (int, error) {
+	var id int
+	err := r.db.QueryRow("INSERT INTO users (username, password_hash) VALUES ($1, $2) RETURNING id",
+		username, passwordHash).Scan(&id)
+	return id, err
+}
+
+func (r *AuthRepository) GetUserByUsername(username string) (*models.User, error) {
+	user := &models.User{}
+	err := r.db.QueryRow("SELECT id, username, password_hash FROM users WHERE username = $1", username).
+		Scan(&user.ID, &user.Username, &user.PasswordHash)
+	return user, err
+}
+
+
+--- FILE: internal\auth\service\auth_service.go ---
+
+package service
+
+import (
+	"errors"
+	"time"
+
+	"smartsync/internal/auth/models"
+	"smartsync/internal/auth/repository"
+
+	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
+)
+
+// В реальных проектах ключ лежит в .env, для диплома оставим здесь
+var jwtSecret = []byte("smartsync_diploma_secret_key_2026")
+
+type AuthService struct {
+	repo *repository.AuthRepository
+}
+
+func NewAuthService(repo *repository.AuthRepository) *AuthService {
+	return &AuthService{repo: repo}
+}
+
+func (s *AuthService) Register(req models.AuthRequest) (int, error) {
+	// Хешируем пароль (cost=10 - баланс между скоростью и безопасностью)
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), 10)
+	if err != nil {
+		return 0, err
+	}
+	return s.repo.CreateUser(req.Username, string(hash))
+}
+
+func (s *AuthService) Login(req models.AuthRequest) (string, error) {
+	user, err := s.repo.GetUserByUsername(req.Username)
+	if err != nil {
+		return "", errors.New("пользователь не найден")
+	}
+
+	// Сравниваем хеши
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
+		return "", errors.New("неверный пароль")
+	}
+
+	// Генерируем JWT токен
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
+		"user_id":  user.ID,
+		"username": user.Username,
+		"exp":      time.Now().Add(time.Hour * 24).Unix(), // Токен живет 24 часа
+	})
+
+	return token.SignedString(jwtSecret)
+}
+
+
+--- FILE: internal\engine\models\types.go ---
+
+package models
+
+type Task struct {
+	ID            int     `json:"id"`
+	Title         string  `json:"title"`
+	Opt           int     `json:"opt"`
+	Real          int     `json:"real"`
+	Pess          int     `json:"pess"`
+	DurationHours float64 `json:"duration_hours"`
+	PriorityScore float64 `json:"priority_score"`
+	UserID        int     `json:"user_id"`
+	ProjectID     int     `json:"project_id"`
+	Status        string  `json:"status"`
+}
+
+type GraphEdge struct {
+	From int `json:"from"`
+	To   int `json:"to"`
+}
+
+type GraphData struct {
+	Nodes []Task      `json:"nodes"`
+	Edges []GraphEdge `json:"edges"`
+}
+
+
+--- FILE: internal\engine\repository\storage.go ---
+
+package repository
+
+import (
+	"database/sql"
+	"smartsync/internal/engine/models"
+)
+
+type Storage struct {
+	db *sql.DB
+}
+
+func NewStorage(db *sql.DB) *Storage {
+	return &Storage{db: db}
+}
+
+func (s *Storage) GetProjectTasks(projectID int) ([]models.Task, error) {
+	// ПРИКАЗ: Добавили status в SELECT
+	rows, err := s.db.Query(`
+		SELECT id, opt, real, pess, status 
+		FROM tasks 
+		WHERE project_id = $1`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tasks []models.Task
+	for rows.Next() {
+		var t models.Task
+		// ПРИКАЗ: Добавили &t.Status в Scan
+		if err := rows.Scan(&t.ID, &t.Opt, &t.Real, &t.Pess, &t.Status); err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, t)
+	}
+	return tasks, nil
+}
+
+// Добавь этот новый метод в этот же файл:
+func (s *Storage) GetTaskDependencies(projectID int) ([]models.GraphEdge, error) {
+	rows, err := s.db.Query(`
+		SELECT d.depends_on_id, d.task_id 
+		FROM dependencies d
+		JOIN tasks t ON d.task_id = t.id
+		WHERE t.project_id = $1`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var edges []models.GraphEdge
+	for rows.Next() {
+		var e models.GraphEdge
+		rows.Scan(&e.From, &e.To)
+		edges = append(edges, e)
+	}
+	return edges, nil
+}
+
+func (s *Storage) UpdateTaskMetrics(id int, duration, priority float64) error {
+	_, err := s.db.Exec("UPDATE tasks SET duration_hours = $1, priority_score = $2 WHERE id = $3", duration, priority, id)
+	return err
+}
+
+func (s *Storage) GetFullGraph(projectID int) (*models.GraphData, error) {
+	graph := &models.GraphData{}
+
+	// ПРИКАЗ: Добавили status в SELECT для Графа
+	rowsNodes, _ := s.db.Query("SELECT id, title, opt, real, pess, duration_hours, priority_score, status FROM tasks WHERE project_id = $1", projectID)
+	defer rowsNodes.Close()
+	for rowsNodes.Next() {
+		var t models.Task
+		// ПРИКАЗ: Добавили &t.Status в Scan
+		rowsNodes.Scan(&t.ID, &t.Title, &t.Opt, &t.Real, &t.Pess, &t.DurationHours, &t.PriorityScore, &t.Status)
+		graph.Nodes = append(graph.Nodes, t)
+	}
+
+	rowsEdges, _ := s.db.Query(`
+		SELECT d.depends_on_id, d.task_id 
+		FROM dependencies d 
+		JOIN tasks t ON d.task_id = t.id 
+		WHERE t.project_id = $1`, projectID)
+	defer rowsEdges.Close()
+	for rowsEdges.Next() {
+		var e models.GraphEdge
+		rowsEdges.Scan(&e.From, &e.To)
+		graph.Edges = append(graph.Edges, e)
+	}
+
+	return graph, nil
+}
+
+
+--- FILE: internal\engine\service\calculator.go ---
+
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"smartsync/internal/engine/repository"
+
+	"github.com/redis/go-redis/v9"
+)
+
+type Calculator struct {
+	repo  *repository.Storage
+	redis *redis.Client
+}
+
+func NewCalculator(repo *repository.Storage, rdb *redis.Client) *Calculator {
+	return &Calculator{repo: repo, redis: rdb}
+}
+
+func (c *Calculator) RecalculateGraph(projectID int) {
+	tasks, err := c.repo.GetProjectTasks(projectID)
+	if err != nil || len(tasks) == 0 {
+		return
+	}
+	edges, _ := c.repo.GetTaskDependencies(projectID)
+
+	adj := make(map[int][]int)
+	inDegree := make(map[int]int)
+	durations := make(map[int]float64)
+	earlyFinish := make(map[int]float64)
+
+	// 1. Инициализация всех задач
+	for _, t := range tasks {
+		inDegree[t.ID] = 0
+		if t.Status == "done" {
+			durations[t.ID] = 0.0
+		} else {
+			durations[t.ID] = float64(t.Opt+4*t.Real+t.Pess) / 6.0
+		}
+		earlyFinish[t.ID] = durations[t.ID]
+	}
+
+	// 2. Построение связей (e.From = родитель, e.To = ребенок)
+	for _, e := range edges {
+		adj[e.From] = append(adj[e.From], e.To)
+		inDegree[e.To]++
+	}
+
+	// 3. Топологическая сортировка (учитывает несколько входящих связей)
+	var queue []int
+	for _, t := range tasks {
+		if inDegree[t.ID] == 0 {
+			queue = append(queue, t.ID)
+		}
+	}
+
+	for len(queue) > 0 {
+		curr := queue[0]
+		queue = queue[1:]
+
+		for _, child := range adj[curr] {
+			// БЕРЕМ МАКСИМАЛЬНЫЙ ПУТЬ: если путь через текущего родителя дольше, обновляем вес ребенка
+			if earlyFinish[curr]+durations[child] > earlyFinish[child] {
+				earlyFinish[child] = earlyFinish[curr] + durations[child]
+			}
+
+			inDegree[child]--
+			if inDegree[child] == 0 {
+				queue = append(queue, child)
+			}
+		}
+	}
+
+	// 4. Сохранение метрик
+	for _, t := range tasks {
+		c.repo.UpdateTaskMetrics(t.ID, durations[t.ID], earlyFinish[t.ID])
+	}
+
+	// 5. Обновление кэша (чтобы фронт получил новые данные)
+	graph, err := c.repo.GetFullGraph(projectID)
+	if err == nil {
+		cacheKey := fmt.Sprintf("smartsync:graph:project:%d", projectID)
+		graphJSON, _ := json.Marshal(graph)
+		c.redis.Set(context.Background(), cacheKey, graphJSON, 0)
+	}
+}
+
+
+--- FILE: internal\handler\http.go ---
+
+package handler
+
+import (
+	"errors"
+	"log"
+	"net/http"
+	"smartsync/internal/models"
+	"smartsync/internal/service"
+	"strconv"
+
+	"github.com/gin-gonic/gin"
+)
+
+type Handler struct {
+	service        *service.TaskService
+	projectService *service.ProjectService
+}
+
+// Убрали NATS из параметров, так как хендлеру он больше не нужен[cite: 2]
+func NewHandler(ts *service.TaskService, ps *service.ProjectService) *Handler {
+	return &Handler{
+		service:        ts,
+		projectService: ps,
+	}
+}
+
+func (h *Handler) InitRoutes() *gin.Engine {
+	r := gin.Default()
+	protected := r.Group("/")
+	protected.Use(AuthMiddleware())
+	{
+		protected.POST("/tasks", h.createTask)
+		protected.PUT("/tasks/:id", h.updateTask)
+		protected.DELETE("/tasks/:id", h.deleteTask)
+		protected.PATCH("/tasks/:id/status", h.updateTaskStatus)
+		protected.POST("/tasks/:id/dependencies", h.createDependency)
+		protected.DELETE("/tasks/:id/dependencies/:dep_id", h.deleteDependency)
+		protected.DELETE("/projects/:project_id/dependencies", h.clearDependencies)
+		protected.GET("/projects/:project_id/graph", h.getGraph)
+		protected.GET("/projects/:project_id/tasks", h.getProjectTasks)
+	}
+	projectHandler := NewProjectHandler(h.projectService)
+	projectHandler.RegisterRoutes(protected)
+	return r
+}
+
+func (h *Handler) createTask(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	var t models.Task
+	if err := c.ShouldBindJSON(&t); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
+		return
+	}
+	t.UserID = userID
+	id, err := h.service.CreateTask(&t)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	t.ID = id
+	c.JSON(http.StatusCreated, t)
+}
+
+func (h *Handler) updateTask(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	taskID, _ := strconv.Atoi(c.Param("id"))
+	var t models.Task
+	if err := c.ShouldBindJSON(&t); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
+		return
+	}
+	t.ID = taskID
+	t.UserID = userID
+
+	if err := h.service.UpdateTask(&t); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "updated"})
+}
+
+func (h *Handler) deleteTask(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	taskID, _ := strconv.Atoi(c.Param("id"))
+	heal := c.Query("heal") == "true"
+
+	if err := h.service.DeleteTask(taskID, userID, heal); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка удаления"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Удалено"})
+}
+
+func (h *Handler) createDependency(c *gin.Context) {
+	// Убрали getUserID, так как мы не проверяем права на создание связи
+	// (или это нужно добавить в сам метод CreateDependency в сервисе)
+	var dep struct {
+		DependsOnID int `json:"depends_on_id"`
+	}
+	if err := c.ShouldBindJSON(&dep); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
+		return
+	}
+
+	taskID, _ := strconv.Atoi(c.Param("id"))
+
+	if err := h.service.CreateDependency(taskID, dep.DependsOnID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Связь создана"})
+}
+
+func (h *Handler) getProjectTasks(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
+	tasks, err := h.service.GetTasksByProject(projectID, userID)
+	if err != nil {
+		// ДОБАВЛЯЕМ ВОТ ЭТУ СТРОКУ:
+		log.Printf("❌ ОШИБКА БД ПРИ ЗАГРУЗКЕ ЗАДАЧ: %v", err)
+
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load tasks"})
+		return
+	}
+
+	if tasks == nil {
+		tasks = []models.Task{}
+	}
+	c.JSON(http.StatusOK, tasks)
+}
+
+func (h *Handler) deleteDependency(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	taskID, _ := strconv.Atoi(c.Param("id"))
+	depID, _ := strconv.Atoi(c.Param("dep_id"))
+
+	if err := h.service.DeleteDependency(taskID, depID, userID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка удаления связи"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Связь удалена"})
+}
+
+func (h *Handler) clearDependencies(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
+
+	h.service.ClearDependencies(projectID, userID)
+	c.JSON(http.StatusOK, gin.H{"message": "Граф сброшен"})
+}
+
+func (h *Handler) getGraph(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
+
+	tasks, err := h.service.GetTasksByProject(projectID, userID)
+	if err != nil || tasks == nil {
+		tasks = []models.Task{}
+	}
+
+	deps, err := h.service.GetDependenciesByProject(projectID)
+	if err != nil || deps == nil {
+		deps = []models.Dependency{}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"tasks":        tasks,
+		"dependencies": deps,
+	})
+}
+
+func (h *Handler) updateTaskStatus(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	taskID, _ := strconv.Atoi(c.Param("id"))
+
+	var req struct {
+		Status string `json:"status" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный статус"})
+		return
+	}
+
+	if err := h.service.UpdateTaskStatus(taskID, userID, req.Status); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Статус обновлен"})
+}
+
+func getUserID(c *gin.Context) (int, error) {
+	val, exists := c.Get("user_id")
+	if !exists {
+		return 0, errors.New("unauthorized: user_id not found")
+	}
+	switch v := val.(type) {
+	case int:
+		return v, nil
+	case float64:
+		return int(v), nil
+	default:
+		return 0, errors.New("invalid user id type")
+	}
+}
+
+
+--- FILE: internal\handler\middleware.go ---
+
+package handler
+
+import (
+	"net/http"
+	"strings"
+
+	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
+)
+
+// AuthMiddleware проверяет наличие и валидность JWT токена
+func AuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Доступ запрещен. Отсутствует токен."})
+			c.Abort()
+			return
+		}
+
+		// Убираем слово "Bearer " из заголовка
+		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
+		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			return []byte("smartsync_diploma_secret_key_2026"), nil
+		})
+
+		if err != nil || !token.Valid {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Токен недействителен или просрочен"})
+			c.Abort()
+			return
+		}
+
+		// Достаем user_id из расшифрованного токена и кладем в контекст запроса
+		claims, _ := token.Claims.(jwt.MapClaims)
+		c.Set("user_id", int(claims["user_id"].(float64)))
+		c.Next()
+	}
+}
+
+
+--- FILE: internal\handler\project_http.go ---
+
+package handler
+
+import (
+	"net/http"
+	"smartsync/internal/service"
+	"strconv"
+
+	"github.com/gin-gonic/gin"
+)
+
+type ProjectHandler struct {
+	service *service.ProjectService
+}
+
+func NewProjectHandler(s *service.ProjectService) *ProjectHandler {
+	return &ProjectHandler{service: s}
+}
+
+func (h *ProjectHandler) RegisterRoutes(protected *gin.RouterGroup) {
+	protected.GET("/projects", h.getProjects)
+	protected.POST("/projects", h.createProject)
+
+	// ИСПРАВЛЕНИЕ ЗДЕСЬ: используем :project_id вместо :id
+	protected.DELETE("/projects/:project_id", h.deleteProject)
+	protected.PUT("/projects/:project_id", h.renameProject)
+	protected.POST("/projects/:project_id/members", h.addMember)
+}
+
+func (h *ProjectHandler) getProjects(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	projects, err := h.service.GetUserProjects(userID.(int))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка получения проектов"})
+		return
+	}
+	c.JSON(http.StatusOK, projects)
+}
+
+func (h *ProjectHandler) createProject(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	var req struct {
+		Name string `json:"name" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Имя не должно быть пустым"})
+		return
+	}
+	id, err := h.service.CreateProject(req.Name, userID.(int))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось создать"})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{"message": "Создано", "id": id})
+}
+
+func (h *ProjectHandler) deleteProject(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	// ИСПРАВЛЕНИЕ ЗДЕСЬ: читаем param "project_id"
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
+
+	if err := h.service.DeleteProject(projectID, userID.(int)); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Только создатель может удалить проект"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Проект удален"})
+}
+
+func (h *ProjectHandler) renameProject(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	// ИСПРАВЛЕНИЕ ЗДЕСЬ: читаем param "project_id"
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
+	var req struct {
+		Name string `json:"name" binding:"required"`
+	}
+	c.ShouldBindJSON(&req)
+
+	if err := h.service.RenameProject(projectID, userID.(int), req.Name); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Только создатель может переименовать"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Проект переименован"})
+}
+
+func (h *ProjectHandler) addMember(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	// ИСПРАВЛЕНИЕ ЗДЕСЬ: читаем param "project_id"
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
+	var req struct {
+		Username string `json:"username" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Укажите логин пользователя"})
+		return
+	}
+
+	if err := h.service.AddMember(projectID, userID.(int), req.Username); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Пользователь успешно приглашен!"})
+}
+
+
+--- FILE: internal\models\project.go ---
+
+package models
+
+type Project struct {
+	ID      int    `json:"id"`
+	Name    string `json:"name"`
+	OwnerID int    `json:"owner_id"`
+	Role    string `json:"role,omitempty"` // Какая роль у того, кто сейчас смотрит проект
+}
+
+// Участник проекта (для совместного доступа)
+type ProjectMember struct {
+	ProjectID int    `json:"project_id"`
+	UserID    int    `json:"user_id"`
+	Username  string `json:"username,omitempty"`
+	Role      string `json:"role"` // Роли: "owner", "editor", "viewer"
+}
+
+
+--- FILE: internal\models\task.go ---
+
+package models
+
+import "time"
+
+type Task struct {
+	ID            int       `json:"id"`
+	Title         string    `json:"title"`
+	Opt           int       `json:"opt"`
+	Real          int       `json:"real"`
+	Pess          int       `json:"pess"`
+	DurationHours float64   `json:"duration_hours"`
+	PriorityScore float64   `json:"priority_score"`
+	UserID        int       `json:"user_id"`         // Это и есть ID создателя
+	CreatedByName string    `json:"created_by_name"` // ДОБАВЛЯЕМ ТОЛЬКО ЭТО ДЛЯ ФРОНТЕНДА
+	ProjectID     int       `json:"project_id"`
+	Status        string    `json:"status"`
+	CreatedAt     time.Time `json:"created_at"` // Для сортировки по времени
+}
+type GraphEdge struct {
+	From int `json:"from"`
+	To   int `json:"to"`
+}
+
+type GraphData struct {
+	Nodes []Task      `json:"nodes"`
+	Edges []GraphEdge `json:"edges"`
+}
+type Dependency struct {
+	TaskID      int `json:"task_id"`
+	DependsOnID int `json:"depends_on_id"`
+}
+
+
+--- FILE: internal\repository\postgres.go ---
+
+package repository
+
+import (
+	"database/sql"
+	"fmt"
+	"smartsync/internal/models"
+)
+
+type TaskRepository struct {
+	db *sql.DB
+}
+
+func NewTaskRepository(db *sql.DB) *TaskRepository {
+	// Автоматическая миграция: добавляем колонку status, если её нет
+	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'todo'`)
+	db.Exec(`UPDATE tasks SET status = 'todo' WHERE status IS NULL`)
+	return &TaskRepository{db: db}
+}
+
+func (r *TaskRepository) CheckAccess(projectID, userID int, requireWrite bool) error {
+	var role string
+	err := r.db.QueryRow("SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2", projectID, userID).Scan(&role)
+	if err != nil {
+		return fmt.Errorf("проект не найден или доступ запрещен")
+	}
+	if requireWrite && role != "owner" && role != "editor" {
+		return fmt.Errorf("недостаточно прав для редактирования")
+	}
+	return nil
+}
+
+func (r *TaskRepository) GetProjectIDByTask(taskID int) (int, error) {
+	var pid int
+	err := r.db.QueryRow("SELECT project_id FROM tasks WHERE id = $1", taskID).Scan(&pid)
+	return pid, err
+}
+
+func (r *TaskRepository) CreateTask(t *models.Task) (int, error) {
+	if err := r.CheckAccess(t.ProjectID, t.UserID, true); err != nil {
+		return 0, err
+	}
+	var id int
+	// При создании задача автоматически получает статус 'todo'
+	err := r.db.QueryRow("INSERT INTO tasks (title, opt, real, pess, user_id, project_id, status) VALUES ($1, $2, $3, $4, $5, $6, 'todo') RETURNING id",
+		t.Title, t.Opt, t.Real, t.Pess, t.UserID, t.ProjectID).Scan(&id)
+	return id, err
+}
+
+func (r *TaskRepository) UpdateTask(t *models.Task) error {
+	pid, err := r.GetProjectIDByTask(t.ID)
+	if err != nil {
+		return err
+	}
+	if err := r.CheckAccess(pid, t.UserID, true); err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec("UPDATE tasks SET title = $1, opt = $2, real = $3, pess = $4 WHERE id = $5", t.Title, t.Opt, t.Real, t.Pess, t.ID)
+	return err
+}
+
+// НОВЫЙ МЕТОД: Изменение только статуса (для Канбана)
+func (r *TaskRepository) UpdateTaskStatus(taskID, userID int, status string) error {
+	pid, err := r.GetProjectIDByTask(taskID)
+	if err != nil {
+		return err
+	}
+	if err := r.CheckAccess(pid, userID, true); err != nil {
+		return err
+	}
+
+	_, err = r.db.Exec("UPDATE tasks SET status = $1 WHERE id = $2", status, taskID)
+	return err
+}
+
+func (r *TaskRepository) DeleteTask(taskID, userID int, heal bool) error {
+	pid, err := r.GetProjectIDByTask(taskID)
+	if err != nil {
+		return err
+	}
+	if err := r.CheckAccess(pid, userID, true); err != nil {
+		return err
+	}
+
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if heal {
+		rowsP, _ := tx.Query("SELECT depends_on_id FROM dependencies WHERE task_id = $1", taskID)
+		var parents []int
+		for rowsP.Next() {
+			var p int
+			rowsP.Scan(&p)
+			parents = append(parents, p)
+		}
+		rowsP.Close()
+
+		rowsC, _ := tx.Query("SELECT task_id FROM dependencies WHERE depends_on_id = $1", taskID)
+		var children []int
+		for rowsC.Next() {
+			var c int
+			rowsC.Scan(&c)
+			children = append(children, c)
+		}
+		rowsC.Close()
+
+		for _, child := range children {
+			for _, parent := range parents {
+				tx.Exec("INSERT INTO dependencies (task_id, depends_on_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", child, parent)
+			}
+		}
+	}
+	_, err = tx.Exec("DELETE FROM tasks WHERE id = $1", taskID)
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (r *TaskRepository) CreateDependency(taskID, dependsOnID int) error {
+	_, err := r.db.Exec("INSERT INTO dependencies (task_id, depends_on_id) VALUES ($1, $2)", taskID, dependsOnID)
+	return err
+}
+
+func (r *TaskRepository) DeleteDependency(taskID, dependsOnID, userID int) error {
+	pid, err := r.GetProjectIDByTask(taskID)
+	if err != nil {
+		return err
+	}
+	if err := r.CheckAccess(pid, userID, true); err != nil {
+		return err
+	}
+	_, err = r.db.Exec(`DELETE FROM dependencies WHERE task_id = $1 AND depends_on_id = $2`, taskID, dependsOnID)
+	return err
+}
+
+func (r *TaskRepository) ClearDependencies(projectID, userID int) error {
+	if err := r.CheckAccess(projectID, userID, true); err != nil {
+		return err
+	}
+	_, err := r.db.Exec(`DELETE FROM dependencies WHERE task_id IN (SELECT id FROM tasks WHERE project_id = $1) OR depends_on_id IN (SELECT id FROM tasks WHERE project_id = $1)`, projectID)
+	return err
+}
+
+func (r *TaskRepository) GetGraphData(projectID, userID int) (*models.GraphData, error) {
+	if err := r.CheckAccess(projectID, userID, false); err != nil {
+		return nil, err
+	}
+	graph := &models.GraphData{}
+
+	// ИСПРАВЛЕНИЕ: Добавили COALESCE для графа!
+	query := `
+		SELECT 
+			id, title, opt, real, pess, 
+			COALESCE(duration_hours, 0.0), 
+			COALESCE(priority_score, 0.0), 
+			status 
+		FROM tasks 
+		WHERE project_id = $1
+	`
+	rowsNodes, err := r.db.Query(query, projectID)
+	if err != nil {
+		return nil, err // Возвращаем ошибку, а не глотаем её!
+	}
+	defer rowsNodes.Close()
+
+	for rowsNodes.Next() {
+		var t models.Task
+		err := rowsNodes.Scan(&t.ID, &t.Title, &t.Opt, &t.Real, &t.Pess, &t.DurationHours, &t.PriorityScore, &t.Status)
+		if err != nil {
+			fmt.Println("Ошибка Scan в GetGraphData:", err) // Выведет в консоль, если что-то не так
+			continue
+		}
+		graph.Nodes = append(graph.Nodes, t)
+	}
+
+	rowsEdges, err := r.db.Query(`SELECT d.depends_on_id, d.task_id FROM dependencies d JOIN tasks t ON d.task_id = t.id WHERE t.project_id = $1`, projectID)
+	if err == nil {
+		defer rowsEdges.Close()
+		for rowsEdges.Next() {
+			var e models.GraphEdge
+			rowsEdges.Scan(&e.From, &e.To)
+			graph.Edges = append(graph.Edges, e)
+		}
+	}
+
+	return graph, nil
+}
+
+// GetTasksByProject возвращает список всех задач конкретного проекта
+// GetTasksByProject возвращает список всех задач конкретного проекта
+func (r *TaskRepository) GetTasksByProject(projectID, userID int) ([]models.Task, error) {
+	var tasks []models.Task
+
+	// Функция COALESCE вернет 0.0, если в базе записан NULL.
+	query := `
+		SELECT 
+			id, project_id, user_id, title, status, opt, real, pess, 
+			COALESCE(duration_hours, 0.0), 
+			COALESCE(priority_score, 0.0) 
+		FROM tasks 
+		WHERE project_id = $1 AND user_id = $2
+	`
+
+	rows, err := r.db.Query(query, projectID, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var t models.Task
+		// ИСПРАВЛЕНО: используем правильное поле DurationHours
+		if err := rows.Scan(
+			&t.ID, &t.ProjectID, &t.UserID, &t.Title, &t.Status,
+			&t.Opt, &t.Real, &t.Pess,
+			&t.DurationHours, &t.PriorityScore,
+		); err != nil {
+			return nil, err
+		}
+		tasks = append(tasks, t)
+	}
+
+	return tasks, nil
+}
+
+func (r *TaskRepository) GetDependenciesByProject(projectID int) ([]models.Dependency, error) {
+	rows, err := r.db.Query(`
+		SELECT d.task_id, d.depends_on_id 
+		FROM dependencies d
+		JOIN tasks t ON d.task_id = t.id
+		WHERE t.project_id = $1`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var deps []models.Dependency
+	for rows.Next() {
+		var d models.Dependency
+		if err := rows.Scan(&d.TaskID, &d.DependsOnID); err != nil {
+			return nil, err
+		}
+		deps = append(deps, d)
+	}
+	return deps, nil
+}
+
+func (r *TaskRepository) GetByID(id, userID int) (*models.Task, error) {
+	var t models.Task
+	err := r.db.QueryRow(
+		"SELECT id, project_id, status, title FROM tasks WHERE id = $1 AND user_id = $2",
+		id, userID,
+	).Scan(&t.ID, &t.ProjectID, &t.Status, &t.Title)
+
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
+}
+
+
+--- FILE: internal\repository\project_repo.go ---
+
+package repository
+
+import (
+	"database/sql"
+	"fmt"
+	"smartsync/internal/models"
+)
+
+type ProjectRepository struct {
+	db *sql.DB
+}
+
+func NewProjectRepository(db *sql.DB) *ProjectRepository {
+	// Создаем таблицу проектов (если её нет)
+	db.Exec(`CREATE TABLE IF NOT EXISTS projects (
+		id SERIAL PRIMARY KEY,
+		name VARCHAR(255) NOT NULL,
+		owner_id INTEGER NOT NULL
+	)`)
+
+	// Создаем таблицу участников для совместного доступа (RBAC)
+	db.Exec(`CREATE TABLE IF NOT EXISTS project_members (
+		project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+		user_id INTEGER NOT NULL,
+		role VARCHAR(50) NOT NULL DEFAULT 'viewer',
+		PRIMARY KEY (project_id, user_id)
+	)`)
+
+	return &ProjectRepository{db: db}
+}
+
+// Получаем все проекты: и свои, и те, куда нас пригласили
+func (r *ProjectRepository) GetUserProjects(userID int) ([]models.Project, error) {
+	query := `
+    SELECT p.id, p.name, p.owner_id, pm.role 
+    FROM projects p
+    JOIN project_members pm ON p.id = pm.project_id
+    WHERE pm.user_id = $1
+`
+	rows, err := r.db.Query(query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var projects []models.Project
+	for rows.Next() {
+		var p models.Project
+		rows.Scan(&p.ID, &p.Name, &p.OwnerID, &p.Role)
+		projects = append(projects, p)
+	}
+
+	// Дефолтный проект для новых пользователей
+	if len(projects) == 0 {
+		return r.createDefaultProject(userID)
+	}
+
+	return projects, nil
+}
+
+func (r *ProjectRepository) createDefaultProject(userID int) ([]models.Project, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	var newID int
+	err = tx.QueryRow("INSERT INTO projects (name, owner_id) VALUES ($1, $2) RETURNING id", "Мой первый проект", userID).Scan(&newID)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = tx.Exec("INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, 'owner')", newID, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	tx.Commit()
+	return []models.Project{{ID: newID, Name: "Мой первый проект", OwnerID: userID, Role: "owner"}}, nil
+}
+
+// Создание нового проекта с транзакцией
+func (r *ProjectRepository) CreateProject(name string, ownerID int) (int, error) {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	var id int
+	err = tx.QueryRow("INSERT INTO projects (name, owner_id) VALUES ($1, $2) RETURNING id", name, ownerID).Scan(&id)
+	if err != nil {
+		return 0, err
+	}
+
+	// Сразу выдаем создателю права 'owner'
+	_, err = tx.Exec("INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, 'owner')", id, ownerID)
+	if err != nil {
+		return 0, err
+	}
+
+	return id, tx.Commit()
+}
+
+// Безопасное удаление проекта (только для владельцев)
+func (r *ProjectRepository) DeleteProject(projectID, userID int) error {
+	_, err := r.db.Exec("DELETE FROM projects WHERE id = $1 AND owner_id = $2", projectID, userID)
+	return err
+}
+
+// Обновление названия проекта
+func (r *ProjectRepository) RenameProject(projectID, userID int, newName string) error {
+	_, err := r.db.Exec("UPDATE projects SET name = $1 WHERE id = $2 AND owner_id = $3", newName, projectID, userID)
+	return err
+}
+
+// Приглашение друга по логину
+func (r *ProjectRepository) AddMember(projectID, ownerID int, username string) error {
+	// 1. Проверяем, что приглашает именно создатель проекта
+	var actualOwner int
+	err := r.db.QueryRow("SELECT owner_id FROM projects WHERE id = $1", projectID).Scan(&actualOwner)
+	if err != nil || actualOwner != ownerID {
+		return fmt.Errorf("только создатель может приглашать участников")
+	}
+
+	// 2. Ищем ID друга по его логину в таблице users (Shared DB Pattern)
+	var targetUserID int
+	err = r.db.QueryRow("SELECT id FROM users WHERE username = $1", username).Scan(&targetUserID)
+	if err != nil {
+		return fmt.Errorf("пользователь с таким логином не найден")
+	}
+
+	// 3. Выдаем права редактора (может двигать задачи, но не может удалить проект)
+	_, err = r.db.Exec("INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, 'editor') ON CONFLICT DO NOTHING", projectID, targetUserID)
+	return err
+}
+
+
+--- FILE: internal\service\project_service.go ---
+
+package service
+
+import (
+	"smartsync/internal/models"
+	"smartsync/internal/repository"
+)
+
+type ProjectService struct {
+	repo *repository.ProjectRepository
+}
+
+func NewProjectService(repo *repository.ProjectRepository) *ProjectService {
+	return &ProjectService{repo: repo}
+}
+
+func (s *ProjectService) GetUserProjects(userID int) ([]models.Project, error) {
+	return s.repo.GetUserProjects(userID)
+}
+
+func (s *ProjectService) CreateProject(name string, userID int) (int, error) {
+	return s.repo.CreateProject(name, userID)
+}
+
+func (s *ProjectService) DeleteProject(projectID, userID int) error {
+	return s.repo.DeleteProject(projectID, userID)
+}
+
+func (s *ProjectService) RenameProject(projectID, userID int, newName string) error {
+	return s.repo.RenameProject(projectID, userID, newName)
+}
+
+func (s *ProjectService) AddMember(projectID, ownerID int, username string) error {
+	return s.repo.AddMember(projectID, ownerID, username)
+}
+
+
+--- FILE: internal\service\task_service.go ---
+
+package service
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"smartsync/internal/models"
+	"smartsync/internal/repository"
+
+	"github.com/nats-io/nats.go"
+	"github.com/redis/go-redis/v9"
+)
+
+type TaskService struct {
+	repo  *repository.TaskRepository
+	nc    *nats.Conn
+	redis *redis.Client
+}
+
+func NewTaskService(repo *repository.TaskRepository, nc *nats.Conn, rdb *redis.Client) *TaskService {
+	return &TaskService{repo: repo, nc: nc, redis: rdb}
+}
+
+func (s *TaskService) triggerMathEngine(projectID int) {
+	// Очищаем кэш в Redis, чтобы фронтенд получил свежие данные
+	s.redis.Del(context.Background(), fmt.Sprintf("smartsync:graph:project:%d", projectID))
+
+	// ВНИМАНИЕ: Тема должна быть project.updated, как мы договорились с движком
+	payload := fmt.Sprintf(`{"project_id": %d}`, projectID)
+	s.nc.Publish("project.updated", []byte(payload))
+}
+
+func (s *TaskService) CreateTask(t *models.Task) (int, error) {
+	if t.Opt == 0 {
+		t.Opt = 1
+	}
+	if t.Real == 0 {
+		t.Real = 1
+	}
+	if t.Pess == 0 {
+		t.Pess = 1
+	}
+
+	id, err := s.repo.CreateTask(t)
+	if err == nil {
+		s.triggerMathEngine(t.ProjectID)
+	}
+	return id, err
+}
+
+func (s *TaskService) UpdateTask(t *models.Task) error {
+	pid, _ := s.repo.GetProjectIDByTask(t.ID)
+	err := s.repo.UpdateTask(t)
+	if err == nil {
+		s.triggerMathEngine(pid)
+	}
+	return err
+}
+
+func (s *TaskService) DeleteTask(taskID, userID int, heal bool) error {
+	pid, _ := s.repo.GetProjectIDByTask(taskID)
+	err := s.repo.DeleteTask(taskID, userID, heal)
+	if err == nil {
+		s.triggerMathEngine(pid)
+	}
+	return err
+}
+
+func (s *TaskService) CreateDependency(taskID, dependsOnID int) error {
+	pid, _ := s.repo.GetProjectIDByTask(taskID)
+	err := s.repo.CreateDependency(taskID, dependsOnID)
+	if err == nil {
+		s.triggerMathEngine(pid)
+	}
+	return err
+}
+
+func (s *TaskService) DeleteDependency(taskID, dependsOnID, userID int) error {
+	pid, _ := s.repo.GetProjectIDByTask(taskID)
+	err := s.repo.DeleteDependency(taskID, dependsOnID, userID)
+	if err == nil {
+		s.triggerMathEngine(pid)
+	}
+	return err
+}
+
+func (s *TaskService) ClearDependencies(projectID, userID int) error {
+	err := s.repo.ClearDependencies(projectID, userID)
+	if err == nil {
+		s.triggerMathEngine(projectID)
+	}
+	return err
+}
+
+func (s *TaskService) GetGraph(ctx context.Context, projectID, userID int) (*models.GraphData, bool, error) {
+	cacheKey := fmt.Sprintf("smartsync:graph:project:%d", projectID)
+	val, err := s.redis.Get(ctx, cacheKey).Result()
+	if err == nil {
+		var graph models.GraphData
+		json.Unmarshal([]byte(val), &graph)
+		return &graph, true, nil
+	}
+
+	graph, err := s.repo.GetGraphData(projectID, userID)
+	return graph, false, err
+}
+
+// НОВЫЙ МЕТОД ДЛЯ КАНБАНА
+func (s *TaskService) UpdateTaskStatus(taskID, userID int, status string) error {
+	// 1. Узнаем ID проекта, чтобы знать, что пересчитывать
+	pid, _ := s.repo.GetProjectIDByTask(taskID)
+
+	// 2. Обновляем статус
+	err := s.repo.UpdateTaskStatus(taskID, userID, status)
+
+	// 3. ПРИКАЗ: Теперь уведомляем движок и здесь!
+	if err == nil {
+		s.triggerMathEngine(pid)
+	}
+	return err
+}
+func (s *TaskService) GetTasksByProject(projectID, userID int) ([]models.Task, error) {
+	return s.repo.GetTasksByProject(projectID, userID)
+}
+func (s *TaskService) GetDependenciesByProject(projectID int) ([]models.Dependency, error) {
+	return s.repo.GetDependenciesByProject(projectID)
+}
+
+func (s *TaskService) GetTaskByID(id, userID int) (*models.Task, error) {
+	return s.repo.GetByID(id, userID)
+}
