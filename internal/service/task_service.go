@@ -22,8 +22,12 @@ func NewTaskService(repo *repository.TaskRepository, nc *nats.Conn, rdb *redis.C
 }
 
 func (s *TaskService) triggerMathEngine(projectID int) {
+	// Очищаем кэш в Redis, чтобы фронтенд получил свежие данные
 	s.redis.Del(context.Background(), fmt.Sprintf("smartsync:graph:project:%d", projectID))
-	s.nc.Publish("graph.updated", []byte(fmt.Sprintf(`{"project_id": %d}`, projectID)))
+
+	// ВНИМАНИЕ: Тема должна быть project.updated, как мы договорились с движком
+	payload := fmt.Sprintf(`{"project_id": %d}`, projectID)
+	s.nc.Publish("project.updated", []byte(payload))
 }
 
 func (s *TaskService) CreateTask(t *models.Task) (int, error) {
@@ -103,11 +107,25 @@ func (s *TaskService) GetGraph(ctx context.Context, projectID, userID int) (*mod
 
 // НОВЫЙ МЕТОД ДЛЯ КАНБАНА
 func (s *TaskService) UpdateTaskStatus(taskID, userID int, status string) error {
-	return s.repo.UpdateTaskStatus(taskID, userID, status)
+	// 1. Узнаем ID проекта, чтобы знать, что пересчитывать
+	pid, _ := s.repo.GetProjectIDByTask(taskID)
+
+	// 2. Обновляем статус
+	err := s.repo.UpdateTaskStatus(taskID, userID, status)
+
+	// 3. ПРИКАЗ: Теперь уведомляем движок и здесь!
+	if err == nil {
+		s.triggerMathEngine(pid)
+	}
+	return err
 }
 func (s *TaskService) GetTasksByProject(projectID, userID int) ([]models.Task, error) {
 	return s.repo.GetTasksByProject(projectID, userID)
 }
 func (s *TaskService) GetDependenciesByProject(projectID int) ([]models.Dependency, error) {
 	return s.repo.GetDependenciesByProject(projectID)
+}
+
+func (s *TaskService) GetTaskByID(id, userID int) (*models.Task, error) {
+	return s.repo.GetByID(id, userID)
 }

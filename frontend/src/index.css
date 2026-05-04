@@ -1,4 +1,13 @@
+/* index.css */
 @import "tailwindcss";
+
+/* ПРИКАЗ: Фиксируем высоту на всех уровнях */
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden; /* Весь экран не скроллится, только контент внутри */
+}
 
 body {
   background-color: #f9fafb;

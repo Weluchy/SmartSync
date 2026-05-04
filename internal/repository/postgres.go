@@ -151,52 +151,82 @@ func (r *TaskRepository) GetGraphData(projectID, userID int) (*models.GraphData,
 	}
 	graph := &models.GraphData{}
 
-	// ТЕПЕРЬ ДОСТАЕМ И СТАТУС ТОЖЕ
-	rowsNodes, _ := r.db.Query("SELECT id, title, opt, real, pess, duration_hours, priority_score, status FROM tasks WHERE project_id = $1", projectID)
+	// ИСПРАВЛЕНИЕ: Добавили COALESCE для графа!
+	query := `
+		SELECT 
+			id, title, opt, real, pess, 
+			COALESCE(duration_hours, 0.0), 
+			COALESCE(priority_score, 0.0), 
+			status 
+		FROM tasks 
+		WHERE project_id = $1
+	`
+	rowsNodes, err := r.db.Query(query, projectID)
+	if err != nil {
+		return nil, err // Возвращаем ошибку, а не глотаем её!
+	}
 	defer rowsNodes.Close()
+
 	for rowsNodes.Next() {
 		var t models.Task
-		rowsNodes.Scan(&t.ID, &t.Title, &t.Opt, &t.Real, &t.Pess, &t.DurationHours, &t.PriorityScore, &t.Status)
+		err := rowsNodes.Scan(&t.ID, &t.Title, &t.Opt, &t.Real, &t.Pess, &t.DurationHours, &t.PriorityScore, &t.Status)
+		if err != nil {
+			fmt.Println("Ошибка Scan в GetGraphData:", err) // Выведет в консоль, если что-то не так
+			continue
+		}
 		graph.Nodes = append(graph.Nodes, t)
 	}
 
-	rowsEdges, _ := r.db.Query(`SELECT d.depends_on_id, d.task_id FROM dependencies d JOIN tasks t ON d.task_id = t.id WHERE t.project_id = $1`, projectID)
-	defer rowsEdges.Close()
-	for rowsEdges.Next() {
-		var e models.GraphEdge
-		rowsEdges.Scan(&e.From, &e.To)
-		graph.Edges = append(graph.Edges, e)
+	rowsEdges, err := r.db.Query(`SELECT d.depends_on_id, d.task_id FROM dependencies d JOIN tasks t ON d.task_id = t.id WHERE t.project_id = $1`, projectID)
+	if err == nil {
+		defer rowsEdges.Close()
+		for rowsEdges.Next() {
+			var e models.GraphEdge
+			rowsEdges.Scan(&e.From, &e.To)
+			graph.Edges = append(graph.Edges, e)
+		}
 	}
+
 	return graph, nil
 }
 
 // GetTasksByProject возвращает список всех задач конкретного проекта
+// GetTasksByProject возвращает список всех задач конкретного проекта
 func (r *TaskRepository) GetTasksByProject(projectID, userID int) ([]models.Task, error) {
-	// Проверяем, есть ли у пользователя доступ к проекту (хотя бы на чтение)
-	if err := r.CheckAccess(projectID, userID, false); err != nil {
-		return nil, err
-	}
+	var tasks []models.Task
 
-	rows, err := r.db.Query(`
-		SELECT id, title, opt, real, pess, user_id, project_id, status, duration_hours, priority_score 
+	// Функция COALESCE вернет 0.0, если в базе записан NULL.
+	query := `
+		SELECT 
+			id, project_id, user_id, title, status, opt, real, pess, 
+			COALESCE(duration_hours, 0.0), 
+			COALESCE(priority_score, 0.0) 
 		FROM tasks 
-		WHERE project_id = $1`, projectID)
+		WHERE project_id = $1 AND user_id = $2
+	`
+
+	rows, err := r.db.Query(query, projectID, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var tasks []models.Task
 	for rows.Next() {
 		var t models.Task
-		err := rows.Scan(&t.ID, &t.Title, &t.Opt, &t.Real, &t.Pess, &t.UserID, &t.ProjectID, &t.Status, &t.DurationHours, &t.PriorityScore)
-		if err != nil {
+		// ИСПРАВЛЕНО: используем правильное поле DurationHours
+		if err := rows.Scan(
+			&t.ID, &t.ProjectID, &t.UserID, &t.Title, &t.Status,
+			&t.Opt, &t.Real, &t.Pess,
+			&t.DurationHours, &t.PriorityScore,
+		); err != nil {
 			return nil, err
 		}
 		tasks = append(tasks, t)
 	}
+
 	return tasks, nil
 }
+
 func (r *TaskRepository) GetDependenciesByProject(projectID int) ([]models.Dependency, error) {
 	rows, err := r.db.Query(`
 		SELECT d.task_id, d.depends_on_id 
@@ -217,4 +247,17 @@ func (r *TaskRepository) GetDependenciesByProject(projectID int) ([]models.Depen
 		deps = append(deps, d)
 	}
 	return deps, nil
+}
+
+func (r *TaskRepository) GetByID(id, userID int) (*models.Task, error) {
+	var t models.Task
+	err := r.db.QueryRow(
+		"SELECT id, project_id, status, title FROM tasks WHERE id = $1 AND user_id = $2",
+		id, userID,
+	).Scan(&t.ID, &t.ProjectID, &t.Status, &t.Title)
+
+	if err != nil {
+		return nil, err
+	}
+	return &t, nil
 }

@@ -30,7 +30,7 @@ func main() {
 	repo := repository.NewStorage(db)
 	calc := service.NewCalculator(repo, rdb)
 
-	nc.Subscribe("graph.updated", func(m *nats.Msg) {
+	nc.Subscribe("project.updated", func(m *nats.Msg) {
 		var payload struct {
 			ProjectID int `json:"project_id"`
 		}

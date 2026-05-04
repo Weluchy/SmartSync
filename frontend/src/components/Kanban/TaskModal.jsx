@@ -1,8 +1,8 @@
-import { useState } from 'react';
-import PropTypes from 'prop-types'; // Импорт
+import { useState, useEffect } from 'react';
+import PropTypes from 'prop-types';
 import { X } from 'lucide-react';
 
-export default function TaskModal({ isOpen, onClose, onCreate, projectId }) {
+export default function TaskModal({ isOpen, onClose, onSave, projectId, initialData }) {
   const [formData, setFormData] = useState({
     title: '',
     opt: 1,
@@ -11,18 +11,26 @@ export default function TaskModal({ isOpen, onClose, onCreate, projectId }) {
     status: 'todo'
   });
 
+  // Когда модалка открывается, проверяем: это создание или редактирование?
+  useEffect(() => {
+    if (initialData) {
+      setFormData(initialData);
+    } else {
+      setFormData({ title: '', opt: 1, real: 2, pess: 3, status: 'todo' });
+    }
+  }, [initialData, isOpen]);
+
   if (!isOpen) return null;
 
   const handleSubmit = (e) => {
     e.preventDefault();
-    onCreate({
+    onSave({
       ...formData,
       opt: parseFloat(formData.opt),
       real: parseFloat(formData.real),
       pess: parseFloat(formData.pess),
       project_id: projectId
     });
-    setFormData({ title: '', opt: 1, real: 2, pess: 3, status: 'todo' });
     onClose();
   };
 
@@ -30,7 +38,9 @@ export default function TaskModal({ isOpen, onClose, onCreate, projectId }) {
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
         <div className="flex justify-between items-center p-6 border-b">
-          <h2 className="text-xl font-bold text-gray-800">Новая задача</h2>
+          <h2 className="text-xl font-bold text-gray-800">
+            {initialData ? 'Редактировать задачу' : 'Новая задача'}
+          </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
             <X size={24} />
           </button>
@@ -44,13 +54,12 @@ export default function TaskModal({ isOpen, onClose, onCreate, projectId }) {
               className="w-full border rounded-lg p-2.5 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none"
               value={formData.title}
               onChange={e => setFormData({...formData, title: e.target.value})}
-              placeholder="Напр: Разработать схему БД"
             />
           </div>
 
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-[10px] font-black text-green-600 uppercase mb-1">Оптим. (ч)</label>
+              <label className="block text-[10px] font-black text-green-600 uppercase mb-1">Оптим.</label>
               <input
                 type="number"
                 className="w-full border rounded-lg p-2 bg-gray-50"
@@ -59,7 +68,7 @@ export default function TaskModal({ isOpen, onClose, onCreate, projectId }) {
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-blue-600 uppercase mb-1">Реал. (ч)</label>
+              <label className="block text-[10px] font-black text-blue-600 uppercase mb-1">Реал.</label>
               <input
                 type="number"
                 className="w-full border rounded-lg p-2 bg-gray-50"
@@ -68,7 +77,7 @@ export default function TaskModal({ isOpen, onClose, onCreate, projectId }) {
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-red-600 uppercase mb-1">Пессим. (ч)</label>
+              <label className="block text-[10px] font-black text-red-600 uppercase mb-1">Пессим.</label>
               <input
                 type="number"
                 className="w-full border rounded-lg p-2 bg-gray-50"
@@ -79,18 +88,9 @@ export default function TaskModal({ isOpen, onClose, onCreate, projectId }) {
           </div>
 
           <div className="pt-4 flex gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex-1 py-3 px-4 border rounded-xl font-bold text-gray-600 hover:bg-gray-50 transition-colors"
-            >
-              Отмена
-            </button>
-            <button
-              type="submit"
-              className="flex-1 py-3 px-4 bg-blue-600 text-white rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-200 transition-all"
-            >
-              Создать
+            <button type="button" onClick={onClose} className="flex-1 py-3 border rounded-xl font-bold">Отмена</button>
+            <button type="submit" className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold">
+              {initialData ? 'Сохранить' : 'Создать'}
             </button>
           </div>
         </form>
@@ -99,10 +99,10 @@ export default function TaskModal({ isOpen, onClose, onCreate, projectId }) {
   );
 }
 
-// Добавили валидацию пропсов
 TaskModal.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
-  onCreate: PropTypes.func.isRequired,
-  projectId: PropTypes.oneOfType([PropTypes.string, PropTypes.number])
+  onSave: PropTypes.func.isRequired,
+  projectId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  initialData: PropTypes.object
 };

@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"smartsync/internal/models"
 	"smartsync/internal/service"
@@ -15,6 +16,7 @@ type Handler struct {
 	projectService *service.ProjectService
 }
 
+// Убрали NATS из параметров, так как хендлеру он больше не нужен[cite: 2]
 func NewHandler(ts *service.TaskService, ps *service.ProjectService) *Handler {
 	return &Handler{
 		service:        ts,
@@ -24,32 +26,21 @@ func NewHandler(ts *service.TaskService, ps *service.ProjectService) *Handler {
 
 func (h *Handler) InitRoutes() *gin.Engine {
 	r := gin.Default()
-
-	// Внимание: Блок CORS удален, так как мы настроили его в Gateway!
-	// Если оставить его здесь, браузер выдаст ошибку "multiple values '*, *'"
-
 	protected := r.Group("/")
 	protected.Use(AuthMiddleware())
 	{
-		// Управление задачами
 		protected.POST("/tasks", h.createTask)
 		protected.PUT("/tasks/:id", h.updateTask)
 		protected.DELETE("/tasks/:id", h.deleteTask)
-		protected.PATCH("/tasks/:id/status", h.updateTaskStatus) // Для Канбан-доски
-
-		// Зависимости
+		protected.PATCH("/tasks/:id/status", h.updateTaskStatus)
 		protected.POST("/tasks/:id/dependencies", h.createDependency)
 		protected.DELETE("/tasks/:id/dependencies/:dep_id", h.deleteDependency)
 		protected.DELETE("/projects/:project_id/dependencies", h.clearDependencies)
-
-		// Проекты
 		protected.GET("/projects/:project_id/graph", h.getGraph)
 		protected.GET("/projects/:project_id/tasks", h.getProjectTasks)
 	}
-
 	projectHandler := NewProjectHandler(h.projectService)
 	projectHandler.RegisterRoutes(protected)
-
 	return r
 }
 
@@ -59,24 +50,19 @@ func (h *Handler) createTask(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
-
 	var t models.Task
 	if err := c.ShouldBindJSON(&t); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
 		return
 	}
-
 	t.UserID = userID
-
-	// CreateTask должен возвращать ID созданной записи
 	id, err := h.service.CreateTask(&t)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	t.ID = id                     // Присваиваем полученный ID объекту
-	c.JSON(http.StatusCreated, t) // Возвращаем ВЕСЬ объект
+	t.ID = id
+	c.JSON(http.StatusCreated, t)
 }
 
 func (h *Handler) updateTask(c *gin.Context) {
@@ -118,18 +104,22 @@ func (h *Handler) deleteTask(c *gin.Context) {
 }
 
 func (h *Handler) createDependency(c *gin.Context) {
-	// ИСПРАВЛЕНИЕ: используем анонимную структуру, чтобы не зависеть от models.Dependency
+	// Убрали getUserID, так как мы не проверяем права на создание связи
+	// (или это нужно добавить в сам метод CreateDependency в сервисе)
 	var dep struct {
 		DependsOnID int `json:"depends_on_id"`
 	}
-	c.ShouldBindJSON(&dep)
+	if err := c.ShouldBindJSON(&dep); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
+		return
+	}
+
 	taskID, _ := strconv.Atoi(c.Param("id"))
 
 	if err := h.service.CreateDependency(taskID, dep.DependsOnID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
 	c.JSON(http.StatusOK, gin.H{"message": "Связь создана"})
 }
 
@@ -143,6 +133,9 @@ func (h *Handler) getProjectTasks(c *gin.Context) {
 	projectID, _ := strconv.Atoi(c.Param("project_id"))
 	tasks, err := h.service.GetTasksByProject(projectID, userID)
 	if err != nil {
+		// ДОБАВЛЯЕМ ВОТ ЭТУ СТРОКУ:
+		log.Printf("❌ ОШИБКА БД ПРИ ЗАГРУЗКЕ ЗАДАЧ: %v", err)
+
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load tasks"})
 		return
 	}
@@ -156,9 +149,10 @@ func (h *Handler) getProjectTasks(c *gin.Context) {
 func (h *Handler) deleteDependency(c *gin.Context) {
 	userID, err := getUserID(c)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
 	}
+
 	taskID, _ := strconv.Atoi(c.Param("id"))
 	depID, _ := strconv.Atoi(c.Param("dep_id"))
 
@@ -226,20 +220,15 @@ func (h *Handler) updateTaskStatus(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "Статус обновлен"})
 }
 
-// Безопасное извлечение ID пользователя
-// getUserID безопасно извлекает ID пользователя из контекста Gin,
-// куда его положил AuthMiddleware.
-// getUserID безопасно достает ID пользователя из контекста Gin
 func getUserID(c *gin.Context) (int, error) {
 	val, exists := c.Get("user_id")
 	if !exists {
 		return 0, errors.New("unauthorized: user_id not found")
 	}
-
-	// Проверяем тип, так как JWT может вернуть float64
 	switch v := val.(type) {
 	case int:
 		return v, nil
