@@ -35,3 +35,12 @@ CREATE TABLE IF NOT EXISTS dependencies (
     depends_on_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
     UNIQUE(task_id, depends_on_id)
 );
+
+ALTER TABLE tasks 
+    ADD COLUMN opt INT DEFAULT 0,
+    ADD COLUMN real INT DEFAULT 0,
+    ADD COLUMN pess INT DEFAULT 0,
+    ADD COLUMN duration_hours DOUBLE PRECISION DEFAULT 0,
+    ADD COLUMN priority_score DOUBLE PRECISION DEFAULT 0,
+    ADD COLUMN user_id INT REFERENCES users(id);
+

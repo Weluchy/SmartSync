@@ -23,16 +23,6 @@ export default function KanbanBoard({ projectId }) {
     } catch (err) { console.error(err); }
   }, [projectId]);
 
-  useEffect(() => {
-  loadTasks(); // Первая загрузка при входе
-
-  // ПРИКАЗ: Обновляем задачи каждые 5 секунд для эффекта присутствия коллег
-  const interval = setInterval(() => {
-    loadTasks();
-  }, 5000);
-
-  return () => clearInterval(interval);
-}, [loadTasks]);
 
   const handleSaveTask = async (taskData) => {
     try {
@@ -61,6 +51,16 @@ export default function KanbanBoard({ projectId }) {
     } catch (err) { console.error(err); }
   };
 
+  useEffect(() => {
+  loadTasks(); // Загрузка при открытии
+
+  // ПРИКАЗ: Опрашивать бэкенд каждые 5 секунд, чтобы видеть перемещения задач коллегами
+  const interval = setInterval(() => {
+    loadTasks();
+  }, 5000);
+
+  return () => clearInterval(interval);
+}, [loadTasks]);
   // maxScore ИСПОЛЬЗУЕТСЯ для расчета критического пути
   const maxScore = tasks.length > 0 ? Math.max(...tasks.map(t => t.priority_score || 0)) : 0;
 
