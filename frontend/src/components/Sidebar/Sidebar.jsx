@@ -3,7 +3,7 @@ import PropTypes from 'prop-types'; // Добавили импорт
 import { Plus, Users, Send, Settings2 } from 'lucide-react';
 import { api } from '../../api/client';
 
-export default function Sidebar({ projects, currentProjectId, onSelectProject, onCreateProject }) {
+export default function Sidebar({ projects, currentProjectId, onSelectProject, onCreateProject, invitations = [] }) {
   const [inviteUser, setInviteUser] = useState('');
 
   const handleInvite = async (e) => {
@@ -51,7 +51,22 @@ export default function Sidebar({ projects, currentProjectId, onSelectProject, o
           </div>
         ))}
       </div>
-
+      {/* НОВЫЙ БЛОК: Входящие приглашения */}
+      {invitations.length > 0 && (
+        <div className="p-4 border-t border-gray-100">
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-3 px-2">Приглашения</span>
+          <div className="space-y-2">
+            {invitations.map(inv => (
+              <div key={inv.id} className="bg-blue-50 p-3 rounded-xl border border-blue-100">
+                <p className="text-[11px] text-blue-800 font-medium mb-2">Проект: {inv.project_name}</p>
+                <button className="w-full bg-blue-600 text-white text-[10px] font-bold py-1.5 rounded-lg hover:bg-blue-700">
+                  ПРИНЯТЬ
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
       {currentProjectId && (
         <div className="p-4 border-t border-gray-100 bg-gray-50/50">
           <div className="flex items-center gap-2 mb-3 px-2 text-gray-500">
@@ -82,4 +97,5 @@ Sidebar.propTypes = {
   currentProjectId: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   onSelectProject: PropTypes.func.isRequired,
   onCreateProject: PropTypes.func.isRequired,
+  invitations: PropTypes.array // Добавь это
 };

@@ -4,6 +4,7 @@ import MainLayout from './components/Layout/MainLayout';
 import Sidebar from './components/Sidebar/Sidebar';
 import KanbanBoard from './components/Kanban/KanbanBoard';
 import TaskGraph from './components/Graph/TaskGraph';
+import UserProfile from './components/Profile/UserProfile';
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('token'));
@@ -16,6 +17,18 @@ export default function App() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
+  const [invitations, setInvitations] = useState([]);
+
+const loadInvitations = useCallback(async () => {
+  try {
+    const data = await api.get('/invitations/my'); // Твой будущий эндпоинт
+    setInvitations(data || []);
+  } catch (err) { console.error(err); }
+}, []);
+
+useEffect(() => {
+  if (isAuthenticated) loadInvitations();
+}, [isAuthenticated, loadInvitations]);
   // Обернули в useCallback, чтобы функция была стабильной
   const loadProjects = useCallback(async () => {
     try {
@@ -67,26 +80,30 @@ export default function App() {
     return (
       <div className="flex h-screen w-full">
         <Sidebar 
-          projects={projects} 
-          currentProjectId={currentProjectId} 
-          onSelectProject={setCurrentProjectId}
-          onCreateProject={async (name) => {
-            await api.post('/projects', { name });
-            loadProjects();
-          }}
-        />
+  projects={projects} 
+  currentProjectId={currentProjectId} 
+  onSelectProject={setCurrentProjectId}
+  onCreateProject={async (name) => {
+    await api.post('/projects', { name });
+    loadProjects();
+  }}
+  invitations={invitations} // ПРИКАЗ: Обязательно добавь эту строку!
+/>
         <MainLayout 
-          projectName={currentProject?.name}
-          activeView={activeView}
-          onSwitchView={setActiveView}
-          onLogout={logout}
-        >
-          {activeView === 'kanban' ? (
-            <KanbanBoard projectId={currentProjectId} />
-          ) : (
-            <TaskGraph projectId={currentProjectId} />
-          )}
-        </MainLayout>
+  projectName={currentProject?.name}
+  activeView={activeView}
+  onSwitchView={setActiveView}
+  onLogout={logout}
+>
+  {/* УСЛОВИЕ ДЛЯ ТРЕХ ВИДОВ */}
+  {activeView === 'kanban' ? (
+    <KanbanBoard projectId={currentProjectId} />
+  ) : activeView === 'profile' ? (
+    <UserProfile />
+  ) : (
+    <TaskGraph projectId={currentProjectId} />
+  )}
+</MainLayout>
       </div>
     );
   }
