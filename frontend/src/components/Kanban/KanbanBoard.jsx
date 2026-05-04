@@ -11,7 +11,6 @@ const COLUMNS = [
 ];
 
 export default function KanbanBoard({ projectId }) {
-  // --- ВСЕ ХУКИ ДОЛЖНЫ БЫТЬ ТУТ (ВНУТРИ ФУНКЦИИ) ---
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -52,7 +51,6 @@ export default function KanbanBoard({ projectId }) {
       console.error(err);
     }
   }
-  // --- КОНЕЦ ЛОГИКИ ХУКОВ ---
 
   if (loading) return <div className="p-8 text-center text-gray-400 font-medium">Загрузка задач...</div>;
 
@@ -85,6 +83,11 @@ export default function KanbanBoard({ projectId }) {
                 >
                   <span className="text-[10px] font-black text-blue-500 uppercase">ID-{task.id}</span>
                   <h4 className="text-sm font-bold text-gray-800 mt-1">{task.title}</h4>
+                  <div className="mt-3 grid grid-cols-3 gap-1">
+                    <div className="text-[9px] text-center bg-green-50 text-green-700 rounded py-0.5 font-bold">O: {task.opt}ч</div>
+                    <div className="text-[9px] text-center bg-blue-50 text-blue-700 rounded py-0.5 font-bold">R: {task.real}ч</div>
+                    <div className="text-[9px] text-center bg-red-50 text-red-700 rounded py-0.5 font-bold">P: {task.pess}ч</div>
+                  </div>
                 </div>
               ))}
             </div>

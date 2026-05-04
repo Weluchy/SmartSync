@@ -1,35 +1,37 @@
--- db/init.sql
-CREATE TABLE tasks (
-    id SERIAL PRIMARY KEY,
-    title TEXT NOT NULL,
-    duration_hours INT DEFAULT 1,
-    priority_score FLOAT DEFAULT 0.0
-);
-
-CREATE TABLE dependencies (
-    task_id INT REFERENCES tasks(id),
-    depends_on_id INT REFERENCES tasks(id),
-    PRIMARY KEY (task_id, depends_on_id)
-);
--- Таблица пользователей
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(50) UNIQUE NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    password_hash VARCHAR(255) NOT NULL
 );
-
--- Обновляем таблицу задач: добавляем владельца
-ALTER TABLE tasks ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);
 
 CREATE TABLE IF NOT EXISTS projects (
     id SERIAL PRIMARY KEY,
-    name VARCHAR(255) NOT NULL,
-    user_id INTEGER REFERENCES users(id),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    name VARCHAR(100) NOT NULL,
+    owner_id INTEGER REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Добавь колонку статуса в задачи
-ALTER TABLE tasks ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'todo';
--- Добавь связь задачи с проектом
-ALTER TABLE tasks ADD COLUMN IF NOT EXISTS project_id INTEGER REFERENCES projects(id);
+CREATE TABLE IF NOT EXISTS project_members (
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    role VARCHAR(20) DEFAULT 'member',
+    PRIMARY KEY (project_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    opt FLOAT,
+    real FLOAT,
+    pess FLOAT,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+    status VARCHAR(20) DEFAULT 'todo',
+    duration_hours FLOAT,
+    priority_score FLOAT
+);
+
+CREATE TABLE IF NOT EXISTS dependencies (
+    task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+    depends_on_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+    UNIQUE(task_id, depends_on_id)
+);

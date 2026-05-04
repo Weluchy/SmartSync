@@ -37,30 +37,23 @@ export default function TaskGraph({ projectId }) {
       }));
 
       const options = {
-  layout: {
-    hierarchical: {
-      enabled: true,
-      direction: 'LR', // Left to Right (Слева направо)
-      sortMethod: 'directed', // Сортировка по направлению стрелок
-      nodeSpacing: 150,
-      levelSeparation: 250,
-    }
-  },
-  physics: {
-    enabled: false // Полностью отключаем физику взрывов!
-  },
-  interaction: { 
-    hover: true, 
-    navigationButtons: true,
-    dragNodes: true
-  }
-};
+        physics: {
+          enabled: false // Выключаем физику, чтобы граф не улетал
+        },
+        layout: {
+          hierarchical: {
+            enabled: true,
+            direction: 'LR', // Слева направо
+            sortMethod: 'directed',
+            nodeSpacing: 150,
+            levelSeparation: 250,
+          }
+        },
+        interaction: { hover: true, navigationButtons: true, dragNodes: true }
+      };
 
-      // ВАЖНО: уничтожаем старый экземпляр перед созданием нового, 
-      // чтобы не было утечек памяти и циклов
       if (networkRef.current) {
         networkRef.current.destroy();
-        networkRef.current = null;
       }
       
       networkRef.current = new Network(containerRef.current, { nodes, edges }, options);
@@ -72,11 +65,9 @@ export default function TaskGraph({ projectId }) {
   useEffect(() => {
     loadGraphData();
     
-    // Очистка при размонтировании компонента
     return () => {
       if (networkRef.current) {
         networkRef.current.destroy();
-        networkRef.current = null;
       }
     };
   }, [loadGraphData]);
@@ -92,11 +83,10 @@ export default function TaskGraph({ projectId }) {
           Обновить связи
         </button>
       </div>
-      {/* Контейнер ДОЛЖЕН иметь четкую высоту. h-full работает, только если родитель h-full */}
       <div 
         ref={containerRef} 
-        className="flex-1 w-full h-full min-h-[500px]" 
-        style={{ height: 'calc(100vh - 150px)' }} 
+        className="flex-1 w-full" 
+        style={{ minHeight: '600px' }} 
       />
     </div>
   );
