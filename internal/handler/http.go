@@ -66,18 +66,25 @@ func (h *Handler) createTask(c *gin.Context) {
 		return
 	}
 
-	t.UserID = userID // КРИТИЧЕСКИ ВАЖНО: привязываем задачу к юзеру
+	t.UserID = userID
 
-	// ИСПРАВЛЕНИЕ: Добавили "_, " чтобы принять два значения
-	if _, err := h.service.CreateTask(&t); err != nil {
+	// CreateTask должен возвращать ID созданной записи
+	id, err := h.service.CreateTask(&t)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusCreated, t)
+
+	t.ID = id                     // Присваиваем полученный ID объекту
+	c.JSON(http.StatusCreated, t) // Возвращаем ВЕСЬ объект
 }
 
 func (h *Handler) updateTask(c *gin.Context) {
-	userID, _ := c.Get("user_id") // Добавить эту строку
+	userID, err := getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
 	taskID, _ := strconv.Atoi(c.Param("id"))
 	var t models.Task
 	if err := c.ShouldBindJSON(&t); err != nil {
@@ -85,7 +92,7 @@ func (h *Handler) updateTask(c *gin.Context) {
 		return
 	}
 	t.ID = taskID
-	t.UserID = userID.(int) // Установить ID пользователя
+	t.UserID = userID
 
 	if err := h.service.UpdateTask(&t); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -95,11 +102,15 @@ func (h *Handler) updateTask(c *gin.Context) {
 }
 
 func (h *Handler) deleteTask(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	userID, err := getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
 	taskID, _ := strconv.Atoi(c.Param("id"))
 	heal := c.Query("heal") == "true"
 
-	if err := h.service.DeleteTask(taskID, userID.(int), heal); err != nil {
+	if err := h.service.DeleteTask(taskID, userID, heal); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка удаления"})
 		return
 	}
@@ -143,11 +154,15 @@ func (h *Handler) getProjectTasks(c *gin.Context) {
 }
 
 func (h *Handler) deleteDependency(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	userID, err := getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
 	taskID, _ := strconv.Atoi(c.Param("id"))
 	depID, _ := strconv.Atoi(c.Param("dep_id"))
 
-	if err := h.service.DeleteDependency(taskID, depID, userID.(int)); err != nil {
+	if err := h.service.DeleteDependency(taskID, depID, userID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка удаления связи"})
 		return
 	}
@@ -155,10 +170,14 @@ func (h *Handler) deleteDependency(c *gin.Context) {
 }
 
 func (h *Handler) clearDependencies(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	userID, err := getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
 	projectID, _ := strconv.Atoi(c.Param("project_id"))
 
-	h.service.ClearDependencies(projectID, userID.(int))
+	h.service.ClearDependencies(projectID, userID)
 	c.JSON(http.StatusOK, gin.H{"message": "Граф сброшен"})
 }
 
@@ -188,7 +207,11 @@ func (h *Handler) getGraph(c *gin.Context) {
 }
 
 func (h *Handler) updateTaskStatus(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	userID, err := getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
 	taskID, _ := strconv.Atoi(c.Param("id"))
 
 	var req struct {
@@ -199,7 +222,7 @@ func (h *Handler) updateTaskStatus(c *gin.Context) {
 		return
 	}
 
-	if err := h.service.UpdateTaskStatus(taskID, userID.(int), req.Status); err != nil {
+	if err := h.service.UpdateTaskStatus(taskID, userID, req.Status); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
@@ -207,11 +230,16 @@ func (h *Handler) updateTaskStatus(c *gin.Context) {
 }
 
 // Безопасное извлечение ID пользователя
+// getUserID безопасно извлекает ID пользователя из контекста Gin,
+// куда его положил AuthMiddleware.
+// getUserID безопасно достает ID пользователя из контекста Gin
 func getUserID(c *gin.Context) (int, error) {
 	val, exists := c.Get("user_id")
 	if !exists {
-		return 0, errors.New("unauthorized")
+		return 0, errors.New("unauthorized: user_id not found")
 	}
+
+	// Проверяем тип, так как JWT может вернуть float64
 	switch v := val.(type) {
 	case int:
 		return v, nil

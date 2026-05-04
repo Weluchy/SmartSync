@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
@@ -57,6 +58,7 @@ func main() {
 	r.Run(":8000")
 }
 
+// В файле main_2.go (Gateway)
 func authMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
@@ -74,6 +76,11 @@ func authMiddleware() gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Неверный токен"})
 			return
 		}
+
+		// Достаем ID и прокидываем его в заголовке для других сервисов
+		claims, _ := token.Claims.(jwt.MapClaims)
+		userID := fmt.Sprintf("%v", claims["user_id"])
+		c.Request.Header.Set("X-User-ID", userID) // Проброс заголовка
 		c.Next()
 	}
 }

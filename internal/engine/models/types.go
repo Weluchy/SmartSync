@@ -8,6 +8,9 @@ type Task struct {
 	Pess          int     `json:"pess"`
 	DurationHours float64 `json:"duration_hours"`
 	PriorityScore float64 `json:"priority_score"`
+	UserID        int     `json:"user_id"`
+	ProjectID     int     `json:"project_id"`
+	Status        string  `json:"status"`
 }
 
 type GraphEdge struct {

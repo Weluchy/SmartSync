@@ -32,12 +32,31 @@ export default function KanbanBoard({ projectId }) {
     loadTasks();
   }, [loadTasks]);
 
-  async function handleCreateTask(taskData) {
+ async function handleCreateTask(taskData) {
+    // 1. Создаем временный объект задачи для мгновенного отображения
+    const tempTask = {
+      ...taskData,
+      id: Date.now(), // Временный ID
+      status: 'todo',
+      priority_score: 0,
+      loading: true // Флаг, чтобы визуально отличить "сохраняемую" задачу
+    };
+
+    // 2. Обновляем состояние локально (Optimistic Update)
+    setTasks(prev => [...prev, tempTask]);
+
     try {
-      await api.post('/tasks', taskData);
-      loadTasks();
-    } catch {
-      alert('Ошибка при создании задачи');
+      const savedTask = await api.post('/tasks', taskData);
+      
+      // 3. Когда сервер ответил, заменяем временную задачу на реальную
+      setTasks(prev => prev.map(t => t.id === tempTask.id ? savedTask : t));
+      
+      // 4. Через секунду обновляем всё, чтобы подтянулись приоритеты от движка
+      setTimeout(loadTasks, 1000); 
+    } catch (err) {
+      // Если ошибка — удаляем временную задачу
+      setTasks(prev => prev.filter(t => t.id !== tempTask.id));
+      alert('Ошибка при создании задачи: ' + err.message);
     }
   }
 

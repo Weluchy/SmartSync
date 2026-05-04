@@ -9,19 +9,19 @@ export const api = {
       ...options.headers,
     };
 
-    // Строго добавляем токен, если он есть
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    // ИСПРАВЛЕНИЕ: Используем GATEWAY вместо this.baseUrl
-    const response = await fetch(`${GATEWAY}${endpoint}`, {
+    // Убираем возможный лишний слеш, если он есть в начале эндпоинта
+    const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+    
+    const response = await fetch(`${GATEWAY}${cleanEndpoint}`, {
       ...options,
       headers,
     });
 
     if (response.status === 401) {
-      // Триггерим логаут, если токен протух
       window.dispatchEvent(new Event('auth-expired'));
       throw new Error('Unauthorized');
     }
