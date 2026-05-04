@@ -12,8 +12,10 @@ export default function TaskGraph({ projectId }) {
     
     try {
       const data = await api.get(`/projects/${projectId}/graph`);
-      
-      const nodes = data.tasks.map(t => ({
+      const tasks = data?.tasks || [];
+      const dependencies = data?.dependencies || [];
+
+      const nodes = tasks.map(t => ({
         id: t.id,
         label: t.title,
         color: {
@@ -26,24 +28,45 @@ export default function TaskGraph({ projectId }) {
         borderWidth: 2
       }));
 
-      const edges = data.dependencies.map(d => ({
-        from: d.parent_id,
-        to: d.child_id,
+      const edges = dependencies.map(d => ({
+        from: d.depends_on_id, 
+        to: d.task_id,
         arrows: 'to',
         color: { color: '#94a3b8' },
         smooth: { type: 'cubicBezier' }
       }));
 
       const options = {
+        autoResize: true,
+        height: '100%',
+        width: '100%',
         physics: {
           enabled: true,
-          barnesHut: { gravConstant: -2000, centralGravity: 0.3, springLength: 150 },
-          stabilization: { iterations: 150 }
+          barnesHut: { 
+            gravConstant: -2000, 
+            centralGravity: 0.3, 
+            springLength: 150 
+          },
+          stabilization: {
+            enabled: true,
+            iterations: 1000, // Ждем стабилизации перед показом
+            updateInterval: 100
+          }
         },
-        interaction: { hover: true, navigationButtons: true }
+        interaction: { 
+          hover: true, 
+          navigationButtons: true,
+          keyboard: true 
+        }
       };
 
-      if (networkRef.current) networkRef.current.destroy();
+      // ВАЖНО: уничтожаем старый экземпляр перед созданием нового, 
+      // чтобы не было утечек памяти и циклов
+      if (networkRef.current) {
+        networkRef.current.destroy();
+        networkRef.current = null;
+      }
+      
       networkRef.current = new Network(containerRef.current, { nodes, edges }, options);
     } catch (err) {
       console.error('Ошибка загрузки графа:', err);
@@ -52,12 +75,20 @@ export default function TaskGraph({ projectId }) {
 
   useEffect(() => {
     loadGraphData();
+    
+    // Очистка при размонтировании компонента
+    return () => {
+      if (networkRef.current) {
+        networkRef.current.destroy();
+        networkRef.current = null;
+      }
+    };
   }, [loadGraphData]);
 
   return (
-    <div className="h-full w-full bg-gray-50 flex flex-col">
+    <div className="flex flex-col h-full w-full bg-gray-50 overflow-hidden">
       <div className="p-4 bg-white border-b flex justify-between items-center shadow-sm z-10">
-        <h3 className="font-bold text-gray-700">Сетевой график (PERT)</h3>
+        <h3 className="font-bold text-gray-700">Сетевой график задач</h3>
         <button 
           onClick={loadGraphData}
           className="text-xs font-bold bg-blue-50 text-blue-600 hover:bg-blue-100 px-4 py-2 rounded-lg transition-colors"
@@ -65,7 +96,12 @@ export default function TaskGraph({ projectId }) {
           Обновить связи
         </button>
       </div>
-      <div ref={containerRef} className="flex-1 cursor-grab active:cursor-grabbing" />
+      {/* Контейнер ДОЛЖЕН иметь четкую высоту. h-full работает, только если родитель h-full */}
+      <div 
+        ref={containerRef} 
+        className="flex-1 w-full h-full min-h-[500px]" 
+        style={{ height: 'calc(100vh - 150px)' }} 
+      />
     </div>
   );
 }

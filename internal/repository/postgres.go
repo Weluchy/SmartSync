@@ -197,3 +197,24 @@ func (r *TaskRepository) GetTasksByProject(projectID, userID int) ([]models.Task
 	}
 	return tasks, nil
 }
+func (r *TaskRepository) GetDependenciesByProject(projectID int) ([]models.Dependency, error) {
+	rows, err := r.db.Query(`
+		SELECT d.task_id, d.depends_on_id 
+		FROM dependencies d
+		JOIN tasks t ON d.task_id = t.id
+		WHERE t.project_id = $1`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var deps []models.Dependency
+	for rows.Next() {
+		var d models.Dependency
+		if err := rows.Scan(&d.TaskID, &d.DependsOnID); err != nil {
+			return nil, err
+		}
+		deps = append(deps, d)
+	}
+	return deps, nil
+}

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"smartsync/internal/models"
 	"smartsync/internal/service"
@@ -147,16 +148,35 @@ func (h *Handler) clearDependencies(c *gin.Context) {
 }
 
 func (h *Handler) getGraph(c *gin.Context) {
-	userID, _ := c.Get("user_id")
 	projectID, _ := strconv.Atoi(c.Param("project_id"))
+	userID, _ := c.Get("user_id")
 
-	graph, fromCache, _ := h.service.GetGraph(c.Request.Context(), projectID, userID.(int))
-	if fromCache {
-		c.Header("X-Cache", "HIT")
-	} else {
-		c.Header("X-Cache", "MISS")
+	// 1. Получаем задачи
+	tasks, err := h.service.GetTasksByProject(projectID, userID.(int))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch tasks"})
+		return
 	}
-	c.JSON(http.StatusOK, graph)
+	if tasks == nil {
+		tasks = []models.Task{} // Защита от null
+	}
+
+	// 2. Получаем зависимости (Проверь, что этот метод есть в твоем сервисе!)
+	deps, err := h.service.GetDependenciesByProject(projectID)
+	if err != nil {
+		deps = []models.Dependency{} // Если метода нет или ошибка, шлем пустой список
+	}
+	if deps == nil {
+		deps = []models.Dependency{} // Защита от null
+	}
+
+	// Отладка в консоль сервера
+	fmt.Printf("DEBUG: Graph for Project %d: %d tasks, %d deps\n", projectID, len(tasks), len(deps))
+
+	c.JSON(http.StatusOK, gin.H{
+		"tasks":        tasks,
+		"dependencies": deps,
+	})
 }
 
 func (h *Handler) updateTaskStatus(c *gin.Context) {

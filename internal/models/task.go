@@ -22,3 +22,7 @@ type GraphData struct {
 	Nodes []Task      `json:"nodes"`
 	Edges []GraphEdge `json:"edges"`
 }
+type Dependency struct {
+	TaskID      int `json:"task_id"`
+	DependsOnID int `json:"depends_on_id"`
+}

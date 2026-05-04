@@ -108,3 +108,6 @@ func (s *TaskService) UpdateTaskStatus(taskID, userID int, status string) error 
 func (s *TaskService) GetTasksByProject(projectID, userID int) ([]models.Task, error) {
 	return s.repo.GetTasksByProject(projectID, userID)
 }
+func (s *TaskService) GetDependenciesByProject(projectID int) ([]models.Dependency, error) {
+	return s.repo.GetDependenciesByProject(projectID)
+}

@@ -11,6 +11,7 @@ const COLUMNS = [
 ];
 
 export default function KanbanBoard({ projectId }) {
+  // --- ВСЕ ХУКИ ДОЛЖНЫ БЫТЬ ТУТ (ВНУТРИ ФУНКЦИИ) ---
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -22,7 +23,7 @@ export default function KanbanBoard({ projectId }) {
       const data = await api.get(`/projects/${projectId}/tasks`);
       setTasks(data || []);
     } catch (err) {
-      console.error('Ошибка:', err);
+      console.error('Ошибка загрузки задач:', err);
     } finally {
       setLoading(false);
     }
@@ -37,18 +38,21 @@ export default function KanbanBoard({ projectId }) {
       await api.post('/tasks', taskData);
       loadTasks();
     } catch {
-      alert('Ошибка создания');
+      alert('Ошибка при создании задачи');
     }
   }
 
   async function updateTaskStatus(taskId, newStatus) {
     try {
       await api.patch(`/tasks/${taskId}/status`, { status: newStatus });
-      setTasks(prev => prev.map(t => t.id === parseInt(taskId) ? { ...t, status: newStatus } : t));
+      setTasks(prev => prev.map(t => 
+        t.id === parseInt(taskId) ? { ...t, status: newStatus } : t
+      ));
     } catch (err) {
       console.error(err);
     }
   }
+  // --- КОНЕЦ ЛОГИКИ ХУКОВ ---
 
   if (loading) return <div className="p-8 text-center text-gray-400 font-medium">Загрузка задач...</div>;
 
