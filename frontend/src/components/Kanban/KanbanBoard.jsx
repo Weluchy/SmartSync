@@ -23,7 +23,16 @@ export default function KanbanBoard({ projectId }) {
     } catch (err) { console.error(err); }
   }, [projectId]);
 
-  useEffect(() => { loadTasks(); }, [loadTasks]);
+  useEffect(() => {
+  loadTasks(); // Первая загрузка при входе
+
+  // ПРИКАЗ: Обновляем задачи каждые 5 секунд для эффекта присутствия коллег
+  const interval = setInterval(() => {
+    loadTasks();
+  }, 5000);
+
+  return () => clearInterval(interval);
+}, [loadTasks]);
 
   const handleSaveTask = async (taskData) => {
     try {
@@ -111,6 +120,17 @@ export default function KanbanBoard({ projectId }) {
                           </button>
                         </div>
                         <h4 className="text-sm font-bold text-gray-800 mt-2">{task.title}</h4>
+<div className="flex items-center gap-2 mt-2">
+  <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center text-[8px] text-white">
+    {task.created_by_name?.charAt(0) || '?'}
+  </div>
+  <span className="text-[10px] text-gray-400">
+    {task.created_by_name || 'Система'}
+  </span>
+</div>
+
+
+
 {/* НОВОЕ: Отображение автора */}
 <p className="text-[9px] text-gray-400 mt-1 uppercase font-medium">
   Автор: {task.created_by_name || 'Система'}

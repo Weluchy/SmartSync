@@ -147,9 +147,18 @@ export default function TaskGraph({ projectId }) {
   }, [projectId]);
 
   useEffect(() => {
+  loadGraphData();
+
+  // ПРИКАЗ: Граф тяжелее доски, поэтому опрашиваем чуть реже — раз в 15 секунд
+  const interval = setInterval(() => {
     loadGraphData();
-    return () => networkRef.current?.destroy();
-  }, [loadGraphData]);
+  }, 15000);
+
+  return () => {
+    clearInterval(interval);
+    if (networkRef.current) networkRef.current.destroy();
+  };
+}, [loadGraphData]);
 
   return (
     <div className="h-full w-full bg-gray-50 p-6 overflow-hidden">

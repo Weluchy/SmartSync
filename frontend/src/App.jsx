@@ -7,29 +7,26 @@ import TaskGraph from './components/Graph/TaskGraph';
 import UserProfile from './components/Profile/UserProfile';
 
 export default function App() {
+  // 1. Сначала все стейты
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('token'));
   const [projects, setProjects] = useState([]);
   const [currentProjectId, setCurrentProjectId] = useState(null);
   const [activeView, setActiveView] = useState('graph');
+  const [invitations, setInvitations] = useState([]);
   
   const [authMode, setAuthMode] = useState('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const [invitations, setInvitations] = useState([]);
 
 const loadInvitations = useCallback(async () => {
-  try {
-    const data = await api.get('/invitations/my'); // Твой будущий эндпоинт
-    setInvitations(data || []);
-  } catch (err) { console.error(err); }
-}, []);
+    try {
+      const data = await api.get('/invitations/my');
+      setInvitations(data || []);
+    } catch (err) { console.error(err); }
+  }, []);
 
-useEffect(() => {
-  if (isAuthenticated) loadInvitations();
-}, [isAuthenticated, loadInvitations]);
-  // Обернули в useCallback, чтобы функция была стабильной
   const loadProjects = useCallback(async () => {
     try {
       const data = await api.get('/projects');
@@ -37,25 +34,23 @@ useEffect(() => {
       if (data?.length > 0 && !currentProjectId) {
         setCurrentProjectId(data[0].id);
       }
-    } catch (err) { 
-      console.error('Ошибка загрузки проектов:', err); 
-    }
+    } catch (err) { console.error('Ошибка загрузки проектов:', err); }
   }, [currentProjectId]);
 
+  // 3. И ТОЛЬКО ПОТОМ используем их в useEffect
   useEffect(() => {
-  if (isAuthenticated) {
-    loadProjects();
-    loadInvitations();
-    
-    // ПРИКАЗ: Запускаем опрос сервера каждые 10 секунд
-    const interval = setInterval(() => {
+    if (isAuthenticated) {
       loadProjects();
       loadInvitations();
-    }, 10000); 
+      
+      const interval = setInterval(() => {
+        loadProjects();
+        loadInvitations();
+      }, 10000); 
 
-    return () => clearInterval(interval);
-  }
-}, [isAuthenticated, loadProjects, loadInvitations]);
+      return () => clearInterval(interval);
+    }
+  }, [isAuthenticated, loadProjects, loadInvitations]);
 
   const handleAuthSubmit = async (e) => {
     e.preventDefault();

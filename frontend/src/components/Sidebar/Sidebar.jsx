@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react'; // Исправлено: добавлены хуки
+import { useState, useEffect, useCallback } from 'react'; // ИСПРАВЛЕНО: добавлены хуки
 import PropTypes from 'prop-types';
-import { Plus, Users, Send, Settings2, ShieldCheck } from 'lucide-react'; // Добавлена иконка роли
+import { Plus, Users, Send, Settings2, ShieldCheck } from 'lucide-react'; 
 import { api } from '../../api/client';
 
 export default function Sidebar({ projects, currentProjectId, onSelectProject, onCreateProject, invitations = [] }) {
@@ -18,23 +18,33 @@ export default function Sidebar({ projects, currentProjectId, onSelectProject, o
     }
   }, [currentProjectId]);
 
-  useEffect(() => {
-    loadMembers();
-  }, [loadMembers]);
+const removeMember = async (userId) => {
+  if (!confirm('Удалить участника из проекта?')) return;
+  try {
+    await api.delete(`/projects/${currentProjectId}/members/${userId}`);
+    loadMembers(); // Обновляем список
+  } catch (err) { alert('Ошибка при удалении: ' + err.message); }
+};
 
-  // Обработка приглашения (теперь используется в форме ниже)
-  const handleInvite = async (e) => {
+ const handleInvite = async (e) => {
     e.preventDefault();
     if (!inviteUser) return;
     try {
       await api.post(`/projects/${currentProjectId}/members`, { username: inviteUser });
       alert(`Пользователь ${inviteUser} успешно добавлен!`);
       setInviteUser('');
-      loadMembers(); // Обновляем список сразу
+      loadMembers(); // Обновляем список участников сразу после добавления
     } catch (err) {
       alert('Ошибка: ' + err.message);
     }
   };
+
+
+  useEffect(() => {
+    loadMembers();
+  }, [loadMembers]);
+
+ 
 
   return (
     <aside className="w-72 bg-white border-r border-gray-200 flex flex-col shadow-sm">
@@ -42,7 +52,6 @@ export default function Sidebar({ projects, currentProjectId, onSelectProject, o
         <h2 className="text-xl font-black text-blue-600 tracking-tight italic">SmartSync.engine</h2>
       </div>
 
-      {/* СПИСОК ПРОЕКТОВ */}
       <div className="flex-1 overflow-y-auto p-4 space-y-1">
         <div className="flex items-center justify-between mb-4 px-2">
           <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Проекты</span>
@@ -71,15 +80,15 @@ export default function Sidebar({ projects, currentProjectId, onSelectProject, o
         ))}
       </div>
 
-      {/* ВХОДЯЩИЕ ПРИГЛАШЕНИЯ */}
+      {/* Входящие приглашения (уже было добавлено) */}
       {invitations.length > 0 && (
-        <div className="p-4 border-t border-gray-100 bg-orange-50/30">
-          <span className="text-[10px] font-bold text-orange-600 uppercase tracking-widest block mb-3 px-2">Новые инвайты</span>
+        <div className="p-4 border-t border-gray-100 bg-blue-50/30">
+          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-3 px-2">Приглашения</span>
           <div className="space-y-2">
             {invitations.map(inv => (
-              <div key={inv.id} className="bg-white p-3 rounded-xl border border-orange-100 shadow-sm">
-                <p className="text-[11px] text-gray-700 font-medium mb-2">Проект: {inv.project_name}</p>
-                <button className="w-full bg-orange-500 text-white text-[10px] font-bold py-1.5 rounded-lg hover:bg-orange-600 transition-colors">
+              <div key={inv.id} className="bg-white p-3 rounded-xl border border-blue-100 shadow-sm">
+                <p className="text-[11px] text-blue-800 font-medium mb-2">Проект: {inv.project_name}</p>
+                <button className="w-full bg-blue-600 text-white text-[10px] font-bold py-1.5 rounded-lg hover:bg-blue-700">
                   ПРИНЯТЬ
                 </button>
               </div>
@@ -88,7 +97,7 @@ export default function Sidebar({ projects, currentProjectId, onSelectProject, o
         </div>
       )}
 
-      {/* КОМАНДА ПРОЕКТА */}
+      {/* НОВОЕ: СПИСОК УЧАСТНИКОВ И ФОРМА ПРИГЛАШЕНИЯ */}
       {currentProjectId && (
         <div className="p-4 border-t border-gray-100 bg-gray-50/50">
           <div className="flex items-center gap-2 mb-3 px-2 text-gray-500">
@@ -96,21 +105,31 @@ export default function Sidebar({ projects, currentProjectId, onSelectProject, o
             <span className="text-[10px] font-bold uppercase tracking-widest">Участники</span>
           </div>
 
-          {/* Список участников */}
+          {/* Отрисовка списка людей из стейта members */}
           <div className="space-y-2 mb-4 max-h-40 overflow-y-auto px-1">
             {members.map(member => (
-              <div key={member.id} className="flex items-center justify-between text-xs py-1 border-b border-gray-100 last:border-0">
-                <div className="flex flex-col">
-                  <span className="text-gray-800 font-semibold">{member.username}</span>
-                  <span className="text-[9px] text-gray-400 flex items-center gap-1 uppercase">
-                    <ShieldCheck size={8} /> {member.role || 'member'}
-                  </span>
-                </div>
-              </div>
-            ))}
+  <div key={member.id} className="flex items-center justify-between text-xs py-2 border-b border-gray-50 last:border-0 group">
+    <div className="flex flex-col">
+      <span className="text-gray-800 font-semibold">{member.username}</span>
+      <span className={`text-[9px] uppercase font-bold ${member.role === 'owner' ? 'text-blue-500' : 'text-gray-400'}`}>
+        {member.role}
+      </span>
+    </div>
+    
+    {/* ПРИКАЗ: Кнопка удаления видна только если это не владелец и текущий юзер имеет права */}
+    {member.role !== 'owner' && (
+      <button 
+        onClick={() => removeMember(member.id)}
+        className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all p-1"
+        title="Удалить из проекта"
+      >
+        <Plus size={14} className="rotate-45" /> 
+      </button>
+    )}
+  </div>
+))}
           </div>
 
-          {/* Поле приглашения ( Send используется здесь ) */}
           <form onSubmit={handleInvite} className="relative">
             <input 
               type="text" 
