@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"smartsync/internal/auth/models"
 	"smartsync/internal/auth/service"
@@ -28,10 +29,6 @@ func (h *AuthHandler) InitRoutes() *gin.Engine {
 	r.PUT("/user/profile", h.updateProfile)
 
 	return r
-}
-
-func (h *AuthHandler) updateProfile(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{"status": "success"})
 }
 
 func (h *AuthHandler) register(c *gin.Context) {
@@ -66,11 +63,48 @@ func (h *AuthHandler) login(c *gin.Context) {
 	c.JSON(http.StatusOK, models.AuthResponse{Token: token})
 }
 
+// Получение профиля
 func (h *AuthHandler) getProfile(c *gin.Context) {
-	// Возвращаем JSON, чтобы App.jsx не падал с SyntaxError
+	// Gateway прокидывает X-User-ID, но мы его парсим
+	userIDStr := c.GetHeader("X-User-ID")
+
+	// Пока обращаемся напрямую к репозиторию для скорости (в идеале через сервис)
+	user, err := h.service.Repo().GetProfileByID(parseID(userIDStr))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Профиль не найден"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"username": "Неизвестно",
-		"stack":    "",
-		"status":   "",
+		"id":        user.ID,
+		"username":  user.Username,
+		"full_name": user.FullName,
+		"stack":     user.Stack,
+		"status":    user.Status,
 	})
+}
+
+// Обновление профиля
+func (h *AuthHandler) updateProfile(c *gin.Context) {
+	userIDStr := c.GetHeader("X-User-ID")
+
+	var req models.ProfileUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат"})
+		return
+	}
+
+	if err := h.service.Repo().UpdateProfile(parseID(userIDStr), req); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при сохранении"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "success", "message": "Профиль обновлен"})
+}
+
+// Вспомогательная функция для парсинга ID
+func parseID(idStr string) int {
+	var id int
+	fmt.Sscanf(idStr, "%d", &id)
+	return id
 }
