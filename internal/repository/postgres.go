@@ -14,6 +14,7 @@ func NewTaskRepository(db *sql.DB) *TaskRepository {
 	// Автоматическая миграция: добавляем колонку status, если её нет
 	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'todo'`)
 	db.Exec(`UPDATE tasks SET status = 'todo' WHERE status IS NULL`)
+	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignee_id INT REFERENCES users(id) ON DELETE SET NULL`)
 	return &TaskRepository{db: db}
 }
 
@@ -201,13 +202,13 @@ func (r *TaskRepository) GetTasksByProject(projectID, userID int) ([]models.Task
 
 	// 2. Забираем ВСЕ задачи проекта (убрали фильтр по user_id)
 	query := `
-		SELECT 
-			id, project_id, user_id, title, status, opt, real, pess, 
-			COALESCE(duration_hours, 0.0), 
-			COALESCE(priority_score, 0.0) 
-		FROM tasks 
-		WHERE project_id = $1
-	`
+    SELECT 
+        id, project_id, user_id, assignee_id, title, status, opt, real, pess, 
+        COALESCE(duration_hours, 0.0), 
+        COALESCE(priority_score, 0.0) 
+    FROM tasks 
+    WHERE project_id = $1
+`
 
 	// Передаем только projectID
 	rows, err := r.db.Query(query, projectID)
@@ -219,7 +220,7 @@ func (r *TaskRepository) GetTasksByProject(projectID, userID int) ([]models.Task
 	for rows.Next() {
 		var t models.Task
 		if err := rows.Scan(
-			&t.ID, &t.ProjectID, &t.UserID, &t.Title, &t.Status,
+			&t.ID, &t.ProjectID, &t.UserID, &t.AssigneeID, &t.Title, &t.Status,
 			&t.Opt, &t.Real, &t.Pess,
 			&t.DurationHours, &t.PriorityScore,
 		); err != nil {

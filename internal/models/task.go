@@ -10,11 +10,13 @@ type Task struct {
 	Pess          int       `json:"pess"`
 	DurationHours float64   `json:"duration_hours"`
 	PriorityScore float64   `json:"priority_score"`
-	UserID        int       `json:"user_id"`         // Это и есть ID создателя
-	CreatedByName string    `json:"created_by_name"` // ДОБАВЛЯЕМ ТОЛЬКО ЭТО ДЛЯ ФРОНТЕНДА
+	UserID        int       `json:"user_id"`
+	CreatedByName string    `json:"created_by_name"`
+	AssigneeID    *int      `json:"assignee_id"`   // Указатель, т.к. может быть NULL
+	AssigneeName  string    `json:"assignee_name"` // Имя для фронтенда
 	ProjectID     int       `json:"project_id"`
 	Status        string    `json:"status"`
-	CreatedAt     time.Time `json:"created_at"` // Для сортировки по времени
+	CreatedAt     time.Time `json:"created_at"`
 }
 type GraphEdge struct {
 	From int `json:"from"`

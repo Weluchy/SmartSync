@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { X } from 'lucide-react';
+import { api } from '../../api/client'; 
 
 export default function TaskModal({ isOpen, onClose, onSave, projectId, initialData }) {
   const [formData, setFormData] = useState({
@@ -10,22 +11,26 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
     pess: 3,
     status: 'todo'
   });
+  const [members, setMembers] = useState([]);
 
-  // Когда модалка открывается, проверяем: это создание или редактирование?
   useEffect(() => {
-    if (initialData) {
-      setFormData(initialData);
-    } else {
-      setFormData({ title: '', opt: 1, real: 2, pess: 3, status: 'todo' });
-    }
-  }, [initialData, isOpen]);
+  if (isOpen && projectId) {
+    api.get(`/projects/${projectId}/members`).then(data => setMembers(data || []));
+  }
+  if (initialData) {
+    setFormData({ ...initialData, assignee_id: initialData.assignee_id || '' });
+  } else {
+    setFormData({ title: '', opt: 1, real: 2, pess: 3, status: 'todo', assignee_id: '' });
+  }
+}, [initialData, isOpen, projectId]); 
 
   if (!isOpen) return null;
 
   const handleSubmit = (e) => {
-    e.preventDefault();
-    onSave({
-      ...formData,
+  e.preventDefault();
+  onSave({
+    ...formData,
+    assignee_id: formData.assignee_id ? parseInt(formData.assignee_id) : null,
       opt: parseFloat(formData.opt),
       real: parseFloat(formData.real),
       pess: parseFloat(formData.pess),
@@ -86,6 +91,20 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
               />
             </div>
           </div>
+
+          <div>
+  <label className="block text-sm font-bold text-gray-700 mb-1">Исполнитель</label>
+  <select
+    className="w-full border rounded-lg p-2.5 bg-gray-50 outline-none"
+    value={formData.assignee_id || ''}
+    onChange={e => setFormData({...formData, assignee_id: e.target.value})}
+  >
+    <option value="">Не назначен</option>
+    {members.map(m => (
+      <option key={m.user_id} value={m.user_id}>{m.username}</option>
+    ))}
+  </select>
+</div>
 
           <div className="pt-4 flex gap-3">
             <button type="button" onClick={onClose} className="flex-1 py-3 border rounded-xl font-bold">Отмена</button>

@@ -3,10 +3,35 @@ package repository
 import (
 	"database/sql"
 	"smartsync/internal/auth/models"
+
+	"github.com/lib/pq"
+	// ДОБАВИТЬ ЭТОТ ИМПОРТ
 )
 
 type AuthRepository struct {
 	db *sql.DB
+}
+
+func (r *AuthRepository) GetUsersNames(ids []int) (map[int]string, error) {
+	result := make(map[int]string)
+	if len(ids) == 0 {
+		return result, nil
+	}
+
+	// Делаем один эффективный SQL-запрос с помощью ANY
+	rows, err := r.db.Query(`SELECT id, COALESCE(full_name, username) FROM users WHERE id = ANY($1)`, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id int
+		var name string
+		rows.Scan(&id, &name)
+		result[id] = name
+	}
+	return result, nil
 }
 
 func NewAuthRepository(db *sql.DB) *AuthRepository {

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'; // ИСПРАВЛЕНО: добавлены хуки
 import PropTypes from 'prop-types';
-import { Plus, Users, Send, Settings2, ShieldCheck } from 'lucide-react'; 
+import { Plus, Users, Send, Settings2 } from 'lucide-react'; 
 import { api } from '../../api/client';
 
 export default function Sidebar({ projects, currentProjectId, onSelectProject, onCreateProject, invitations = [] }) {
@@ -106,29 +106,32 @@ const removeMember = async (userId) => {
           </div>
 
           {/* Отрисовка списка людей из стейта members */}
+          
           <div className="space-y-2 mb-4 max-h-40 overflow-y-auto px-1">
             {members.map(member => (
-  <div key={member.id} className="flex items-center justify-between text-xs py-2 border-b border-gray-50 last:border-0 group">
-    <div className="flex flex-col">
-      <span className="text-gray-800 font-semibold">{member.username}</span>
-      <span className={`text-[9px] uppercase font-bold ${member.role === 'owner' ? 'text-blue-500' : 'text-gray-400'}`}>
-        {member.role}
-      </span>
-    </div>
-    
-    {/* ПРИКАЗ: Кнопка удаления видна только если это не владелец и текущий юзер имеет права */}
-    {member.role !== 'owner' && (
-      <button 
-        onClick={() => removeMember(member.id)}
-        className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all p-1"
-        title="Удалить из проекта"
-      >
-        <Plus size={14} className="rotate-45" /> 
-      </button>
-    )}
-  </div>
-))}
+              <div key={member.user_id} className="flex items-center justify-between text-xs py-2 border-b border-gray-50 last:border-0 group">
+                <div className="flex flex-col">
+                  <span className="text-gray-800 font-semibold">{member.username}</span>
+                  <span className={`text-[9px] uppercase font-bold ${member.role === 'owner' ? 'text-blue-500' : 'text-gray-400'}`}>
+                    {member.role}
+                  </span>
+                </div>
+                
+                {/* Кнопка удаления видна только если это не владелец */}
+                {member.role !== 'owner' && (
+                  <button 
+                    onClick={() => removeMember(member.user_id)}
+                    className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all p-1"
+                    title="Удалить из проекта"
+                  >
+                    <Plus size={14} className="rotate-45" /> 
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
+
+          <form onSubmit={handleInvite} className="relative"></form>
 
           <form onSubmit={handleInvite} className="relative">
             <input 

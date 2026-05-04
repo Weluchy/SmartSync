@@ -135,3 +135,41 @@ func (r *ProjectRepository) AddMember(projectID, ownerID int, username string) e
 	_, err = r.db.Exec("INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, 'editor') ON CONFLICT DO NOTHING", projectID, targetUserID)
 	return err
 }
+
+func (r *ProjectRepository) GetProjectMembers(projectID int) ([]models.ProjectMember, error) {
+	query := `
+		SELECT pm.project_id, pm.user_id, pm.role, u.username 
+		FROM project_members pm
+		JOIN users u ON pm.user_id = u.id
+		WHERE pm.project_id = $1
+	`
+	rows, err := r.db.Query(query, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var members []models.ProjectMember
+	for rows.Next() {
+		var m models.ProjectMember
+		rows.Scan(&m.ProjectID, &m.UserID, &m.Role, &m.Username)
+		members = append(members, m)
+	}
+	return members, nil
+}
+
+// Удаление участника (с проверкой прав)
+func (r *ProjectRepository) RemoveMember(projectID, ownerID, targetUserID int) error {
+	var actualOwner int
+	err := r.db.QueryRow("SELECT owner_id FROM projects WHERE id = $1", projectID).Scan(&actualOwner)
+	if err != nil || actualOwner != ownerID {
+		return fmt.Errorf("только создатель может удалять участников")
+	}
+
+	if ownerID == targetUserID {
+		return fmt.Errorf("нельзя удалить создателя проекта")
+	}
+
+	_, err = r.db.Exec("DELETE FROM project_members WHERE project_id = $1 AND user_id = $2", projectID, targetUserID)
+	return err
+}

@@ -135,8 +135,17 @@ export default function KanbanBoard({ projectId }) {
 <p className="text-[9px] text-gray-400 mt-1 uppercase font-medium">
   Автор: {task.created_by_name || 'Система'}
 </p>
+
+{/* ВСТАВЬ КОД ИСПОЛНИТЕЛЯ СЮДА */}
+{task.assignee_id ? (
+   <p className="text-[10px] text-gray-500 mt-1 font-medium bg-gray-100 p-1.5 rounded w-fit">
+      Исп: <span className="font-bold text-gray-700">{task.assignee_name}</span>
+   </p>
+) : (
+   <p className="text-[10px] text-gray-400 mt-1 font-medium italic">Не назначен</p>
+)}
                         
-                        {isCritical && (
+{isCritical && (
                           <div className="flex items-center gap-1 text-[9px] text-red-600 font-bold mt-3 bg-red-100 w-fit px-2.5 py-1 rounded-full">
                             <AlertCircle size={10} /> КРИТИЧЕСКИЙ ВЕС
                           </div>
@@ -167,6 +176,7 @@ export default function KanbanBoard({ projectId }) {
     </div>
   );
 }
+
 
 KanbanBoard.propTypes = {
   projectId: PropTypes.oneOfType([PropTypes.number, PropTypes.string])

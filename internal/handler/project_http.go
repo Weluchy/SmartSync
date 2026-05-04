@@ -2,6 +2,7 @@ package handler
 
 import (
 	"net/http"
+	"smartsync/internal/models"
 	"smartsync/internal/service"
 	"strconv"
 
@@ -26,10 +27,35 @@ func (h *ProjectHandler) RegisterRoutes(protected *gin.RouterGroup) {
 	protected.POST("/projects/:project_id/members", h.addMember)
 
 	protected.GET("/projects/:project_id/members", h.getMembers)
+
+	protected.DELETE("/projects/:project_id/members/:user_id", h.removeMember)
 }
 
 func (h *ProjectHandler) getMembers(c *gin.Context) {
-	c.JSON(http.StatusOK, []interface{}{})
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
+	members, err := h.service.GetProjectMembers(projectID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось загрузить участников"})
+		return
+	}
+
+	if members == nil {
+		members = []models.ProjectMember{}
+	}
+	c.JSON(http.StatusOK, members)
+}
+
+func (h *ProjectHandler) removeMember(c *gin.Context) {
+	ownerID, _ := c.Get("user_id")
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
+	targetUserID, _ := strconv.Atoi(c.Param("user_id"))
+
+	err := h.service.RemoveMember(projectID, ownerID.(int), targetUserID)
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Участник удален"})
 }
 
 func (h *ProjectHandler) getProjects(c *gin.Context) {

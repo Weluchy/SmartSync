@@ -32,3 +32,11 @@ func (s *ProjectService) RenameProject(projectID, userID int, newName string) er
 func (s *ProjectService) AddMember(projectID, ownerID int, username string) error {
 	return s.repo.AddMember(projectID, ownerID, username)
 }
+
+func (s *ProjectService) GetProjectMembers(projectID int) ([]models.ProjectMember, error) {
+	return s.repo.GetProjectMembers(projectID)
+}
+
+func (s *ProjectService) RemoveMember(projectID, ownerID, targetUserID int) error {
+	return s.repo.RemoveMember(projectID, ownerID, targetUserID)
+}

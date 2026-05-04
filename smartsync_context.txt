@@ -71,6 +71,59 @@ func BenchmarkDFS_10000(b *testing.B) {
 }
 
 
+--- FILE: cmd\audit-service\main.go ---
+
+package main
+
+import (
+	"encoding/json"
+	"log"
+	"time"
+
+	"github.com/nats-io/nats.go"
+)
+
+// Модель лога аудита
+type AuditLog struct {
+	TaskID    int    `json:"task_id"`
+	UserID    int    `json:"user_id"`
+	Action    string `json:"action"`
+	NewStatus string `json:"new_status"`
+	Timestamp string `json:"timestamp"`
+}
+
+func main() {
+	// Подключаемся к брокеру NATS
+	nc, err := nats.Connect("nats://localhost:4222")
+	if err != nil {
+		log.Fatal("Не удалось подключиться к NATS:", err)
+	}
+	defer nc.Close()
+
+	log.Println("Audit Service запущен и ожидает события в топике 'audit.logs'...")
+
+	// Слушаем топик аудита
+	_, err = nc.Subscribe("audit.logs", func(m *nats.Msg) {
+		var logEntry AuditLog
+		if err := json.Unmarshal(m.Data, &logEntry); err == nil {
+			logEntry.Timestamp = time.Now().Format(time.RFC3339)
+
+			// Для диплома: здесь можно подключить MongoDB и делать collection.InsertOne(logEntry)
+			// Сейчас просто красиво выводим в консоль
+			log.Printf("[AUDIT] Пользователь ID:%d изменил статус задачи ID:%d на '%s' в %s\n",
+				logEntry.UserID, logEntry.TaskID, logEntry.NewStatus, logEntry.Timestamp)
+		}
+	})
+
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Блокируем горутину, чтобы сервис работал вечно
+	select {}
+}
+
+
 --- FILE: cmd\auth-service\main.go ---
 
 package main
@@ -168,6 +221,8 @@ func main() {
 		protected.DELETE("/projects/:project_id/dependencies", taskProxy)
 		protected.GET("/projects/:project_id/graph", taskProxy)
 		protected.GET("/projects/:project_id/tasks", taskProxy)
+
+		protected.DELETE("/projects/:project_id/members/:user_id", taskProxy)
 	}
 
 	log.Println("API Gateway запущен на порту 8000")
@@ -1049,6 +1104,15 @@ export default function KanbanBoard({ projectId }) {
   );
 }
 
+{/* Внутри карточки задачи, под блоком Автора */}
+{task.assignee_id ? (
+   <p className="text-[10px] text-gray-500 mt-1 font-medium bg-gray-100 p-1.5 rounded w-fit">
+      Исп: <span className="font-bold text-gray-700">{task.assignee_name}</span>
+   </p>
+) : (
+   <p className="text-[10px] text-gray-400 mt-1 font-medium italic">Не назначен</p>
+)}
+
 KanbanBoard.propTypes = {
   projectId: PropTypes.oneOfType([PropTypes.number, PropTypes.string])
 };
@@ -1067,22 +1131,26 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
     pess: 3,
     status: 'todo'
   });
+  const [members, setMembers] = useState([]);
 
-  // Когда модалка открывается, проверяем: это создание или редактирование?
   useEffect(() => {
-    if (initialData) {
-      setFormData(initialData);
-    } else {
-      setFormData({ title: '', opt: 1, real: 2, pess: 3, status: 'todo' });
-    }
-  }, [initialData, isOpen]);
+  if (isOpen && projectId) {
+    api.get(`/projects/${projectId}/members`).then(data => setMembers(data || []));
+  }
+  if (initialData) {
+    setFormData({ ...initialData, assignee_id: initialData.assignee_id || '' });
+  } else {
+    setFormData({ title: '', opt: 1, real: 2, pess: 3, status: 'todo', assignee_id: '' });
+  }
+}, [initialData, isOpen, projectId]); 
 
   if (!isOpen) return null;
 
   const handleSubmit = (e) => {
-    e.preventDefault();
-    onSave({
-      ...formData,
+  e.preventDefault();
+  onSave({
+    ...formData,
+    assignee_id: formData.assignee_id ? parseInt(formData.assignee_id) : null,
       opt: parseFloat(formData.opt),
       real: parseFloat(formData.real),
       pess: parseFloat(formData.pess),
@@ -1143,6 +1211,20 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
               />
             </div>
           </div>
+
+          <div>
+  <label className="block text-sm font-bold text-gray-700 mb-1">Исполнитель</label>
+  <select
+    className="w-full border rounded-lg p-2.5 bg-gray-50 outline-none"
+    value={formData.assignee_id || ''}
+    onChange={e => setFormData({...formData, assignee_id: e.target.value})}
+  >
+    <option value="">Не назначен</option>
+    {members.map(m => (
+      <option key={m.user_id} value={m.user_id}>{m.username}</option>
+    ))}
+  </select>
+</div>
 
           <div className="pt-4 flex gap-3">
             <button type="button" onClick={onClose} className="flex-1 py-3 border rounded-xl font-bold">Отмена</button>
@@ -1997,6 +2079,7 @@ require (
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"smartsync/internal/auth/models"
 	"smartsync/internal/auth/service"
@@ -2021,8 +2104,29 @@ func (h *AuthHandler) InitRoutes() *gin.Engine {
 
 	// Добавляем маршрут, который ждет фронтенд
 	r.GET("/user/profile", h.getProfile)
+	r.PUT("/user/profile", h.updateProfile)
+
+	r.POST("/internal/users/bulk", h.getUsersBulk)
 
 	return r
+}
+
+func (h *AuthHandler) getUsersBulk(c *gin.Context) {
+	var req struct {
+		IDs []int `json:"ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid format"})
+		return
+	}
+
+	// В идеале вызывать через сервис, но для простоты стучимся в репо
+	names, err := h.service.Repo().GetUsersNames(req.IDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"})
+		return
+	}
+	c.JSON(http.StatusOK, names)
 }
 
 func (h *AuthHandler) register(c *gin.Context) {
@@ -2057,13 +2161,50 @@ func (h *AuthHandler) login(c *gin.Context) {
 	c.JSON(http.StatusOK, models.AuthResponse{Token: token})
 }
 
+// Получение профиля
 func (h *AuthHandler) getProfile(c *gin.Context) {
-	// Возвращаем JSON, чтобы App.jsx не падал с SyntaxError
+	// Gateway прокидывает X-User-ID, но мы его парсим
+	userIDStr := c.GetHeader("X-User-ID")
+
+	// Пока обращаемся напрямую к репозиторию для скорости (в идеале через сервис)
+	user, err := h.service.Repo().GetProfileByID(parseID(userIDStr))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Профиль не найден"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"username": "Неизвестно",
-		"stack":    "",
-		"status":   "",
+		"id":        user.ID,
+		"username":  user.Username,
+		"full_name": user.FullName,
+		"stack":     user.Stack,
+		"status":    user.Status,
 	})
+}
+
+// Обновление профиля
+func (h *AuthHandler) updateProfile(c *gin.Context) {
+	userIDStr := c.GetHeader("X-User-ID")
+
+	var req models.ProfileUpdateRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный формат"})
+		return
+	}
+
+	if err := h.service.Repo().UpdateProfile(parseID(userIDStr), req); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка при сохранении"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"status": "success", "message": "Профиль обновлен"})
+}
+
+// Вспомогательная функция для парсинга ID
+func parseID(idStr string) int {
+	var id int
+	fmt.Sscanf(idStr, "%d", &id)
+	return id
 }
 
 
@@ -2076,8 +2217,18 @@ import "time"
 type User struct {
 	ID           int       `json:"id"`
 	Username     string    `json:"username"`
-	PasswordHash string    `json:"-"` // Запрещаем вывод хэша в JSON
+	PasswordHash string    `json:"-"`
+	FullName     string    `json:"full_name"` // Новое
+	Stack        string    `json:"stack"`     // Новое
+	Status       string    `json:"status"`    // Новое
 	CreatedAt    time.Time `json:"created_at"`
+}
+
+// Модель для обновления профиля
+type ProfileUpdateRequest struct {
+	FullName string `json:"full_name"`
+	Stack    string `json:"stack"`
+	Status   string `json:"status"`
 }
 
 type AuthRequest struct {
@@ -2097,22 +2248,74 @@ package repository
 import (
 	"database/sql"
 	"smartsync/internal/auth/models"
+
+	"github.com/lib/pq"
+	// ДОБАВИТЬ ЭТОТ ИМПОРТ
 )
 
 type AuthRepository struct {
 	db *sql.DB
 }
 
+func (r *AuthRepository) GetUsersNames(ids []int) (map[int]string, error) {
+	result := make(map[int]string)
+	if len(ids) == 0 {
+		return result, nil
+	}
+
+	// Делаем один эффективный SQL-запрос с помощью ANY
+	rows, err := r.db.Query(`SELECT id, COALESCE(full_name, username) FROM users WHERE id = ANY($1)`, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var id int
+		var name string
+		rows.Scan(&id, &name)
+		result[id] = name
+	}
+	return result, nil
+}
+
 func NewAuthRepository(db *sql.DB) *AuthRepository {
-	// Автоматическая миграция таблицы пользователей
 	db.Exec(`CREATE TABLE IF NOT EXISTS users (
 		id SERIAL PRIMARY KEY,
 		username VARCHAR(50) UNIQUE NOT NULL,
 		password_hash VARCHAR(255) NOT NULL,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	)`)
+
+	// Безопасное добавление новых колонок для профиля
+	db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(100) DEFAULT ''`)
+	db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS stack VARCHAR(255) DEFAULT ''`)
+	db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(100) DEFAULT ''`)
+
 	return &AuthRepository{db: db}
 }
+
+// Получение профиля по ID
+func (r *AuthRepository) GetProfileByID(userID int) (*models.User, error) {
+	user := &models.User{}
+	err := r.db.QueryRow(`
+		SELECT id, username, COALESCE(full_name, ''), COALESCE(stack, ''), COALESCE(status, '') 
+		FROM users WHERE id = $1`, userID).
+		Scan(&user.ID, &user.Username, &user.FullName, &user.Stack, &user.Status)
+	return user, err
+}
+
+// Обновление профиля
+func (r *AuthRepository) UpdateProfile(userID int, req models.ProfileUpdateRequest) error {
+	_, err := r.db.Exec(`
+		UPDATE users 
+		SET full_name = $1, stack = $2, status = $3 
+		WHERE id = $4`,
+		req.FullName, req.Stack, req.Status, userID)
+	return err
+}
+
+// ... (CreateUser и GetUserByUsername остаются как были)
 
 func (r *AuthRepository) CreateUser(username, passwordHash string) (int, error) {
 	var id int
@@ -2150,6 +2353,8 @@ var jwtSecret = []byte("smartsync_diploma_secret_key_2026")
 type AuthService struct {
 	repo *repository.AuthRepository
 }
+
+func (s *AuthService) Repo() *repository.AuthRepository { return s.repo }
 
 func NewAuthService(repo *repository.AuthRepository) *AuthService {
 	return &AuthService{repo: repo}
@@ -2442,6 +2647,7 @@ func (h *Handler) InitRoutes() *gin.Engine {
 		protected.DELETE("/projects/:project_id/dependencies", h.clearDependencies)
 		protected.GET("/projects/:project_id/graph", h.getGraph)
 		protected.GET("/projects/:project_id/tasks", h.getProjectTasks)
+		protected.GET("/invitations/my", h.getMyInvitations)
 	}
 	projectHandler := NewProjectHandler(h.projectService)
 	projectHandler.RegisterRoutes(protected)
@@ -2643,6 +2849,10 @@ func getUserID(c *gin.Context) (int, error) {
 	}
 }
 
+func (h *Handler) getMyInvitations(c *gin.Context) {
+	c.JSON(http.StatusOK, []interface{}{})
+}
+
 
 --- FILE: internal\handler\middleware.go ---
 
@@ -2692,6 +2902,7 @@ package handler
 
 import (
 	"net/http"
+	"smartsync/internal/models"
 	"smartsync/internal/service"
 	"strconv"
 
@@ -2714,6 +2925,51 @@ func (h *ProjectHandler) RegisterRoutes(protected *gin.RouterGroup) {
 	protected.DELETE("/projects/:project_id", h.deleteProject)
 	protected.PUT("/projects/:project_id", h.renameProject)
 	protected.POST("/projects/:project_id/members", h.addMember)
+
+	protected.GET("/projects/:project_id/members", h.getMembers)
+
+	protected.DELETE("/projects/:project_id/members/:user_id", h.removeMember)
+}
+
+func (h *ProjectHandler) removeMember(c *gin.Context) {
+	ownerID, _ := c.Get("user_id")
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
+	targetUserID, _ := strconv.Atoi(c.Param("user_id"))
+
+	// Защита: удалять может только владелец
+	err := h.service.RemoveMember(projectID, ownerID.(int), targetUserID)
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Участник удален"})
+}
+
+func (h *ProjectHandler) getMembers(c *gin.Context) {
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
+	members, err := h.service.GetProjectMembers(projectID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось загрузить участников"})
+		return
+	}
+
+	if members == nil {
+		members = []models.ProjectMember{}
+	}
+	c.JSON(http.StatusOK, members)
+}
+
+func (h *ProjectHandler) removeMember(c *gin.Context) {
+	ownerID, _ := c.Get("user_id")
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
+	targetUserID, _ := strconv.Atoi(c.Param("user_id"))
+
+	err := h.service.RemoveMember(projectID, ownerID.(int), targetUserID)
+	if err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Участник удален"})
 }
 
 func (h *ProjectHandler) getProjects(c *gin.Context) {
@@ -2827,11 +3083,13 @@ type Task struct {
 	Pess          int       `json:"pess"`
 	DurationHours float64   `json:"duration_hours"`
 	PriorityScore float64   `json:"priority_score"`
-	UserID        int       `json:"user_id"`         // Это и есть ID создателя
-	CreatedByName string    `json:"created_by_name"` // ДОБАВЛЯЕМ ТОЛЬКО ЭТО ДЛЯ ФРОНТЕНДА
+	UserID        int       `json:"user_id"`
+	CreatedByName string    `json:"created_by_name"`
+	AssigneeID    *int      `json:"assignee_id"`   // Указатель, т.к. может быть NULL
+	AssigneeName  string    `json:"assignee_name"` // Имя для фронтенда
 	ProjectID     int       `json:"project_id"`
 	Status        string    `json:"status"`
-	CreatedAt     time.Time `json:"created_at"` // Для сортировки по времени
+	CreatedAt     time.Time `json:"created_at"`
 }
 type GraphEdge struct {
 	From int `json:"from"`
@@ -2866,6 +3124,7 @@ func NewTaskRepository(db *sql.DB) *TaskRepository {
 	// Автоматическая миграция: добавляем колонку status, если её нет
 	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'todo'`)
 	db.Exec(`UPDATE tasks SET status = 'todo' WHERE status IS NULL`)
+	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignee_id INT REFERENCES users(id) ON DELETE SET NULL`)
 	return &TaskRepository{db: db}
 }
 
@@ -3043,21 +3302,26 @@ func (r *TaskRepository) GetGraphData(projectID, userID int) (*models.GraphData,
 }
 
 // GetTasksByProject возвращает список всех задач конкретного проекта
-// GetTasksByProject возвращает список всех задач конкретного проекта
 func (r *TaskRepository) GetTasksByProject(projectID, userID int) ([]models.Task, error) {
+	// 1. Сначала проверяем, есть ли у пользователя доступ к проекту
+	if err := r.CheckAccess(projectID, userID, false); err != nil {
+		return nil, err
+	}
+
 	var tasks []models.Task
 
-	// Функция COALESCE вернет 0.0, если в базе записан NULL.
+	// 2. Забираем ВСЕ задачи проекта (убрали фильтр по user_id)
 	query := `
-		SELECT 
-			id, project_id, user_id, title, status, opt, real, pess, 
-			COALESCE(duration_hours, 0.0), 
-			COALESCE(priority_score, 0.0) 
-		FROM tasks 
-		WHERE project_id = $1 AND user_id = $2
-	`
+    SELECT 
+        id, project_id, user_id, assignee_id, title, status, opt, real, pess, 
+        COALESCE(duration_hours, 0.0), 
+        COALESCE(priority_score, 0.0) 
+    FROM tasks 
+    WHERE project_id = $1
+`
 
-	rows, err := r.db.Query(query, projectID, userID)
+	// Передаем только projectID
+	rows, err := r.db.Query(query, projectID)
 	if err != nil {
 		return nil, err
 	}
@@ -3065,9 +3329,8 @@ func (r *TaskRepository) GetTasksByProject(projectID, userID int) ([]models.Task
 
 	for rows.Next() {
 		var t models.Task
-		// ИСПРАВЛЕНО: используем правильное поле DurationHours
 		if err := rows.Scan(
-			&t.ID, &t.ProjectID, &t.UserID, &t.Title, &t.Status,
+			&t.ID, &t.ProjectID, &t.UserID, &t.AssigneeID, &t.Title, &t.Status,
 			&t.Opt, &t.Real, &t.Pess,
 			&t.DurationHours, &t.PriorityScore,
 		); err != nil {
@@ -3255,6 +3518,44 @@ func (r *ProjectRepository) AddMember(projectID, ownerID int, username string) e
 	return err
 }
 
+func (r *ProjectRepository) GetProjectMembers(projectID int) ([]models.ProjectMember, error) {
+	query := `
+		SELECT pm.project_id, pm.user_id, pm.role, u.username 
+		FROM project_members pm
+		JOIN users u ON pm.user_id = u.id
+		WHERE pm.project_id = $1
+	`
+	rows, err := r.db.Query(query, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var members []models.ProjectMember
+	for rows.Next() {
+		var m models.ProjectMember
+		rows.Scan(&m.ProjectID, &m.UserID, &m.Role, &m.Username)
+		members = append(members, m)
+	}
+	return members, nil
+}
+
+// Удаление участника (с проверкой прав)
+func (r *ProjectRepository) RemoveMember(projectID, ownerID, targetUserID int) error {
+	var actualOwner int
+	err := r.db.QueryRow("SELECT owner_id FROM projects WHERE id = $1", projectID).Scan(&actualOwner)
+	if err != nil || actualOwner != ownerID {
+		return fmt.Errorf("только создатель может удалять участников")
+	}
+
+	if ownerID == targetUserID {
+		return fmt.Errorf("нельзя удалить создателя проекта")
+	}
+
+	_, err = r.db.Exec("DELETE FROM project_members WHERE project_id = $1 AND user_id = $2", projectID, targetUserID)
+	return err
+}
+
 
 --- FILE: internal\service\project_service.go ---
 
@@ -3293,15 +3594,25 @@ func (s *ProjectService) AddMember(projectID, ownerID int, username string) erro
 	return s.repo.AddMember(projectID, ownerID, username)
 }
 
+func (s *ProjectService) GetProjectMembers(projectID int) ([]models.ProjectMember, error) {
+	return s.repo.GetProjectMembers(projectID)
+}
+
+func (s *ProjectService) RemoveMember(projectID, ownerID, targetUserID int) error {
+	return s.repo.RemoveMember(projectID, ownerID, targetUserID)
+}
 
 --- FILE: internal\service\task_service.go ---
 
 package service
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
+	"fmt" // ДОБАВИТЬ
+	"log"
+	"net/http"
 	"smartsync/internal/models"
 	"smartsync/internal/repository"
 
@@ -3405,21 +3716,84 @@ func (s *TaskService) GetGraph(ctx context.Context, projectID, userID int) (*mod
 
 // НОВЫЙ МЕТОД ДЛЯ КАНБАНА
 func (s *TaskService) UpdateTaskStatus(taskID, userID int, status string) error {
-	// 1. Узнаем ID проекта, чтобы знать, что пересчитывать
 	pid, _ := s.repo.GetProjectIDByTask(taskID)
-
-	// 2. Обновляем статус
 	err := s.repo.UpdateTaskStatus(taskID, userID, status)
 
-	// 3. ПРИКАЗ: Теперь уведомляем движок и здесь!
 	if err == nil {
 		s.triggerMathEngine(pid)
+
+		// НОВОЕ: Отправляем событие аудита в NATS
+		auditMsg := fmt.Sprintf(`{"task_id": %d, "user_id": %d, "action": "STATUS_CHANGED", "new_status": "%s"}`, taskID, userID, status)
+		s.nc.Publish("audit.logs", []byte(auditMsg))
 	}
 	return err
 }
+
 func (s *TaskService) GetTasksByProject(projectID, userID int) ([]models.Task, error) {
-	return s.repo.GetTasksByProject(projectID, userID)
+	// Запрашиваем "голые" задачи из базы
+	tasks, err := s.repo.GetTasksByProject(projectID, userID)
+	if err != nil || len(tasks) == 0 {
+		return tasks, err
+	}
+
+	// 1. Собираем уникальные ID авторов, чтобы не запрашивать одно имя дважды
+	userIDs := make(map[int]bool)
+	for _, t := range tasks {
+		userIDs[t.UserID] = true
+		if t.AssigneeID != nil {
+			userIDs[*t.AssigneeID] = true
+		}
+	}
+	var ids []int
+	for id := range userIDs {
+		ids = append(ids, id)
+	}
+
+	// 2. Делаем СИНХРОННЫЙ HTTP ЗАПРОС в Auth Service (порт 8081)
+	reqBody, _ := json.Marshal(map[string]interface{}{"ids": ids})
+	resp, err := http.Post("http://localhost:8081/internal/users/bulk", "application/json", bytes.NewBuffer(reqBody))
+
+	if err != nil {
+		log.Printf("❌ ОШИБКА: Не удалось связаться с Auth Service: %v\n", err)
+	} else if resp.StatusCode != http.StatusOK {
+		log.Printf("❌ ОШИБКА: Auth Service вернул статус %d\n", resp.StatusCode)
+	}
+
+	if err == nil && resp.StatusCode == http.StatusOK {
+		defer resp.Body.Close()
+
+		var names map[string]string
+		if err := json.NewDecoder(resp.Body).Decode(&names); err != nil {
+			log.Printf("❌ ОШИБКА: Не удалось распарсить ответ от Auth Service: %v\n", err)
+		}
+
+		for i := range tasks {
+			// Обогащаем автора
+			authorIDStr := fmt.Sprintf("%d", tasks[i].UserID)
+			if name, ok := names[authorIDStr]; ok && name != "" {
+				tasks[i].CreatedByName = name
+			} else {
+				tasks[i].CreatedByName = "Неизвестный"
+			}
+
+			// Обогащаем исполнителя
+			if tasks[i].AssigneeID != nil {
+				assigneeIDStr := fmt.Sprintf("%d", *tasks[i].AssigneeID)
+				if name, ok := names[assigneeIDStr]; ok && name != "" {
+					tasks[i].AssigneeName = name
+				}
+			}
+		}
+	} else {
+		// Fallback: если Auth Service упал или вернул ошибку
+		for i := range tasks {
+			tasks[i].CreatedByName = "Система (Auth Service недоступен)"
+		}
+	}
+
+	return tasks, nil
 }
+
 func (s *TaskService) GetDependenciesByProject(projectID int) ([]models.Dependency, error) {
 	return s.repo.GetDependenciesByProject(projectID)
 }

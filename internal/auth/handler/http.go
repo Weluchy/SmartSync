@@ -28,7 +28,27 @@ func (h *AuthHandler) InitRoutes() *gin.Engine {
 	r.GET("/user/profile", h.getProfile)
 	r.PUT("/user/profile", h.updateProfile)
 
+	r.POST("/internal/users/bulk", h.getUsersBulk)
+
 	return r
+}
+
+func (h *AuthHandler) getUsersBulk(c *gin.Context) {
+	var req struct {
+		IDs []int `json:"ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid format"})
+		return
+	}
+
+	// В идеале вызывать через сервис, но для простоты стучимся в репо
+	names, err := h.service.Repo().GetUsersNames(req.IDs)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"})
+		return
+	}
+	c.JSON(http.StatusOK, names)
 }
 
 func (h *AuthHandler) register(c *gin.Context) {
