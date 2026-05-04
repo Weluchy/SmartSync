@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"smartsync/internal/models"
@@ -54,20 +55,25 @@ func (h *Handler) InitRoutes() *gin.Engine {
 }
 
 func (h *Handler) createTask(c *gin.Context) {
-	userID, _ := c.Get("user_id")
-	var t models.Task
-	if err := c.ShouldBindJSON(&t); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	userID, err := getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
 	}
-	t.UserID = userID.(int)
 
-	id, err := h.service.CreateTask(&t)
-	if err != nil {
+	var t models.Task
+	if err := c.ShouldBindJSON(&t); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
+		return
+	}
+
+	t.UserID = userID // КРИТИЧЕСКИ ВАЖНО: привязываем задачу к юзеру
+
+	if err := h.service.CreateTask(&t); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "Задача создана", "id": id})
+	c.JSON(http.StatusCreated, t)
 }
 
 func (h *Handler) updateTask(c *gin.Context) {
@@ -116,14 +122,21 @@ func (h *Handler) createDependency(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Связь создана"})
 }
 func (h *Handler) getProjectTasks(c *gin.Context) {
-	userID, _ := c.Get("user_id") // Получаем ID пользователя из контекста
-	projectID, _ := strconv.Atoi(c.Param("project_id"))
-
-	// Передаем userID для проверки прав доступа
-	tasks, err := h.service.GetTasksByProject(projectID, userID.(int))
+	userID, err := getUserID(c)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка загрузки задач"})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 		return
+	}
+
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
+	tasks, err := h.service.GetTasksByProject(projectID, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load tasks"})
+		return
+	}
+
+	if tasks == nil {
+		tasks = []models.Task{}
 	}
 	c.JSON(http.StatusOK, tasks)
 }
@@ -196,4 +209,20 @@ func (h *Handler) updateTaskStatus(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Статус обновлен"})
+}
+
+// Безопасное извлечение ID пользователя
+func getUserID(c *gin.Context) (int, error) {
+	val, exists := c.Get("user_id")
+	if !exists {
+		return 0, errors.New("unauthorized")
+	}
+	switch v := val.(type) {
+	case int:
+		return v, nil
+	case float64:
+		return int(v), nil
+	default:
+		return 0, errors.New("invalid user id type")
+	}
 }

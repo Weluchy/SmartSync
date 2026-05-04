@@ -37,28 +37,24 @@ export default function TaskGraph({ projectId }) {
       }));
 
       const options = {
-        autoResize: true,
-        height: '100%',
-        width: '100%',
-        physics: {
-          enabled: true,
-          barnesHut: { 
-            gravConstant: -2000, 
-            centralGravity: 0.3, 
-            springLength: 150 
-          },
-          stabilization: {
-            enabled: true,
-            iterations: 1000, // Ждем стабилизации перед показом
-            updateInterval: 100
-          }
-        },
-        interaction: { 
-          hover: true, 
-          navigationButtons: true,
-          keyboard: true 
-        }
-      };
+  layout: {
+    hierarchical: {
+      enabled: true,
+      direction: 'LR', // Left to Right (Слева направо)
+      sortMethod: 'directed', // Сортировка по направлению стрелок
+      nodeSpacing: 150,
+      levelSeparation: 250,
+    }
+  },
+  physics: {
+    enabled: false // Полностью отключаем физику взрывов!
+  },
+  interaction: { 
+    hover: true, 
+    navigationButtons: true,
+    dragNodes: true
+  }
+};
 
       // ВАЖНО: уничтожаем старый экземпляр перед созданием нового, 
       // чтобы не было утечек памяти и циклов

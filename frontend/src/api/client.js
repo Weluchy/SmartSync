@@ -2,16 +2,28 @@ const GATEWAY = "http://localhost:8000";
 
 export const api = {
   async request(endpoint, options = {}) {
-    const token = localStorage.getItem('token');
-    const headers = { 'Content-Type': 'application/json', ...options.headers };
-    if (token) headers['Authorization'] = `Bearer ${token}`;
+  const token = localStorage.getItem('token');
+  
+  const headers = {
+    'Content-Type': 'application/json',
+    ...options.headers,
+  };
 
-    const response = await fetch(`${GATEWAY}${endpoint}`, { ...options, headers });
-    if (response.status === 401) {
-      localStorage.removeItem('token');
-      window.dispatchEvent(new Event('auth-expired'));
-      return null;
-    }
+  // Строго добавляем токен, если он есть
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  const response = await fetch(`${this.baseUrl}${endpoint}`, {
+    ...options,
+    headers,
+  });
+
+  if (response.status === 401) {
+    // Триггерим логаут, если токен протух
+    window.dispatchEvent(new Event('auth-expired'));
+    throw new Error('Unauthorized');
+  }
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Ошибка API');
     return data;
