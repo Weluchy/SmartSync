@@ -6,6 +6,7 @@ import { api } from '../../api/client';
 export default function Sidebar({ projects, currentProjectId, onSelectProject, onCreateProject, invitations = [] }) {
   const [inviteUser, setInviteUser] = useState('');
   const [members, setMembers] = useState([]);
+  const [selectedRole, setSelectedRole] = useState('viewer');
 
   // Загрузка участников текущего проекта
   const loadMembers = useCallback(async () => {
@@ -28,17 +29,21 @@ const removeMember = async (userId) => {
 
  const handleInvite = async (e) => {
     e.preventDefault();
-    if (!inviteUser) return;
     try {
-      await api.post(`/projects/${currentProjectId}/members`, { username: inviteUser });
-      alert(`Пользователь ${inviteUser} успешно добавлен!`);
+      await api.post(`/projects/${currentProjectId}/members`, { 
+        username: inviteUser, 
+        role: selectedRole // Отправляем выбранную роль
+      });
       setInviteUser('');
-      loadMembers(); // Обновляем список участников сразу после добавления
-    } catch (err) {
-      alert('Ошибка: ' + err.message);
-    }
-  };
-
+      loadMembers();
+    } catch (err) { alert(err.message); }
+};
+const changeRole = async (userId, newRole) => {
+    try {
+        await api.patch(`/projects/${currentProjectId}/members/${userId}`, { role: newRole });
+        loadMembers();
+    } catch (err) { alert(err.message); }
+};
 
   useEffect(() => {
     loadMembers();
@@ -109,41 +114,64 @@ const removeMember = async (userId) => {
           
           <div className="space-y-2 mb-4 max-h-40 overflow-y-auto px-1">
             {members.map(member => (
-              <div key={member.user_id} className="flex items-center justify-between text-xs py-2 border-b border-gray-50 last:border-0 group">
-                <div className="flex flex-col">
-                  <span className="text-gray-800 font-semibold">{member.username}</span>
-                  <span className={`text-[9px] uppercase font-bold ${member.role === 'owner' ? 'text-blue-500' : 'text-gray-400'}`}>
-                    {member.role}
-                  </span>
-                </div>
-                
-                {/* Кнопка удаления видна только если это не владелец */}
-                {member.role !== 'owner' && (
-                  <button 
-                    onClick={() => removeMember(member.user_id)}
-                    className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all p-1"
-                    title="Удалить из проекта"
-                  >
-                    <Plus size={14} className="rotate-45" /> 
-                  </button>
-                )}
-              </div>
-            ))}
+  <div key={member.user_id} className="flex items-center justify-between text-xs py-2 border-b border-gray-50 last:border-0 group">
+    <div className="flex flex-col flex-1">
+      <span className="text-gray-800 font-semibold">{member.username}</span>
+      
+      {/* Если это владелец, просто пишем роль, если нет — даем менять */}
+      {member.role === 'owner' ? (
+        <span className="text-[9px] uppercase font-bold text-blue-500">
+          {member.role}
+        </span>
+      ) : (
+        <select 
+          value={member.role}
+          onChange={(e) => changeRole(member.user_id, e.target.value)}
+          className="text-[9px] bg-transparent font-bold text-gray-400 uppercase outline-none cursor-pointer hover:text-blue-600"
+        >
+          <option value="viewer">viewer</option>
+          <option value="editor">editor</option>
+          <option value="admin">admin</option>
+        </select>
+      )}
+    </div>
+    
+    {member.role !== 'owner' && (
+      <button 
+        onClick={() => removeMember(member.user_id)}
+        className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all p-1"
+        title="Удалить из проекта"
+      >
+        <Plus size={14} className="rotate-45" /> 
+      </button>
+    )}
+  </div>
+))}
           </div>
 
 
-          <form onSubmit={handleInvite} className="relative">
-            <input 
-              type="text" 
-              placeholder="Логин коллеги..." 
-              value={inviteUser}
-              onChange={e => setInviteUser(e.target.value)}
-              className="w-full text-xs border border-gray-200 rounded-lg pl-3 pr-8 py-2 outline-none focus:ring-2 focus:ring-blue-500 bg-white shadow-inner" 
-            />
-            <button type="submit" className="absolute right-2 top-1.5 text-blue-600 hover:text-blue-800 transition-colors">
-              <Send size={14} />
-            </button>
-          </form>
+          <form onSubmit={handleInvite} className="space-y-2">
+  <input 
+    value={inviteUser}
+    onChange={e => setInviteUser(e.target.value)}
+    placeholder="Логин коллеги..."
+    className="w-full text-xs border rounded-lg p-2"
+  />
+  <div className="flex gap-2">
+    <select 
+      value={selectedRole}
+      onChange={e => setSelectedRole(e.target.value)}
+      className="flex-1 text-[10px] border rounded-lg bg-white p-1"
+    >
+      <option value="viewer">Viewer (10)</option>
+      <option value="editor">Editor (40)</option>
+      <option value="admin">Admin (80)</option>
+    </select>
+    <button type="submit" className="bg-blue-600 text-white p-1.5 rounded-lg">
+      <Send size={14} />
+    </button>
+  </div>
+</form>
         </div>
       )}
     </aside>

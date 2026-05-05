@@ -29,8 +29,9 @@ func (s *ProjectService) RenameProject(projectID, userID int, newName string) er
 	return s.repo.RenameProject(projectID, userID, newName)
 }
 
-func (s *ProjectService) AddMember(projectID, ownerID int, username string) error {
-	return s.repo.AddMember(projectID, ownerID, username)
+// ИСПРАВЛЕНО: Добавлен параметр role
+func (s *ProjectService) AddMember(projectID, ownerID int, username string, role string) error {
+	return s.repo.AddMember(projectID, ownerID, username, role)
 }
 
 func (s *ProjectService) GetProjectMembers(projectID int) ([]models.ProjectMember, error) {
@@ -39,4 +40,8 @@ func (s *ProjectService) GetProjectMembers(projectID int) ([]models.ProjectMembe
 
 func (s *ProjectService) RemoveMember(projectID, ownerID, targetUserID int) error {
 	return s.repo.RemoveMember(projectID, ownerID, targetUserID)
+}
+
+func (s *ProjectService) UpdateMemberRole(projectID, ownerID, targetUserID int, newRole string) error {
+	return s.repo.UpdateMemberRole(projectID, ownerID, targetUserID, newRole)
 }

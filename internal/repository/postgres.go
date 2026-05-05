@@ -18,16 +18,20 @@ func NewTaskRepository(db *sql.DB) *TaskRepository {
 
 func (r *TaskRepository) DB() *sql.DB { return r.db }
 
-func (r *TaskRepository) CheckAccess(projectID, userID int, requireWrite bool) error {
+// CheckAccess теперь универсален и работает на системе весов
+func (r *TaskRepository) CheckAccess(projectID, userID int, requiredWeight int) (string, error) {
 	var role string
 	err := r.db.QueryRow("SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2", projectID, userID).Scan(&role)
 	if err != nil {
-		return fmt.Errorf("доступ к проекту запрещен")
+		return "", fmt.Errorf("у вас нет доступа к этому проекту")
 	}
-	if requireWrite && role == "viewer" {
-		return fmt.Errorf("редактирование запрещено")
+
+	userWeight := models.RoleWeights[role]
+	if userWeight < requiredWeight {
+		return role, fmt.Errorf("ваша роль (%s) недостаточно высока для этого действия", role)
 	}
-	return nil
+
+	return role, nil
 }
 
 func (r *TaskRepository) GetProjectIDByTask(taskID int) (int, error) {
@@ -38,13 +42,16 @@ func (r *TaskRepository) GetProjectIDByTask(taskID int) (int, error) {
 
 func (r *TaskRepository) GetByIDInternal(id int) (*models.Task, error) {
 	var t models.Task
-	err := r.db.QueryRow("SELECT id, project_id, status, title, user_id, assignee_id FROM tasks WHERE id = $1", id).
+	err := r.db.QueryRow(`
+		SELECT id, project_id, status, title, user_id, assignee_id 
+		FROM tasks WHERE id = $1`, id).
 		Scan(&t.ID, &t.ProjectID, &t.Status, &t.Title, &t.UserID, &t.AssigneeID)
 	return &t, err
 }
 
 func (r *TaskRepository) CreateTask(t *models.Task) (int, error) {
-	if err := r.CheckAccess(t.ProjectID, t.UserID, true); err != nil {
+	// Для создания задачи нужен вес Editor (40)
+	if _, err := r.CheckAccess(t.ProjectID, t.UserID, models.RoleWeights[models.RoleEditor]); err != nil {
 		return 0, err
 	}
 	var id int
@@ -56,8 +63,12 @@ func (r *TaskRepository) CreateTask(t *models.Task) (int, error) {
 
 func (r *TaskRepository) UpdateTask(t *models.Task) error {
 	pid, err := r.GetProjectIDByTask(t.ID)
-	if err != nil || r.CheckAccess(pid, t.UserID, true) != nil {
-		return fmt.Errorf("нет прав")
+	if err != nil {
+		return err
+	}
+	// Для изменения параметров задачи (имя, оценки) нужен вес Editor (40)
+	if _, err := r.CheckAccess(pid, t.UserID, models.RoleWeights[models.RoleEditor]); err != nil {
+		return err
 	}
 	_, err = r.db.Exec(`UPDATE tasks SET title = $1, opt = $2, real = $3, pess = $4, assignee_id = $5 WHERE id = $6`,
 		t.Title, t.Opt, t.Real, t.Pess, t.AssigneeID, t.ID)
@@ -65,14 +76,19 @@ func (r *TaskRepository) UpdateTask(t *models.Task) error {
 }
 
 func (r *TaskRepository) UpdateTaskStatus(taskID int, status string) error {
+	// Сама смена статуса в БД не проверяет права, это делает Service
 	_, err := r.db.Exec("UPDATE tasks SET status = $1 WHERE id = $2", status, taskID)
 	return err
 }
 
 func (r *TaskRepository) DeleteTask(taskID, userID int, heal bool) error {
 	pid, err := r.GetProjectIDByTask(taskID)
-	if err != nil || r.CheckAccess(pid, userID, true) != nil {
-		return fmt.Errorf("нет прав")
+	if err != nil {
+		return err
+	}
+	// Удаление — серьезное действие, требующее веса Admin (80)
+	if _, err := r.CheckAccess(pid, userID, models.RoleWeights[models.RoleAdmin]); err != nil {
+		return err
 	}
 	_, err = r.db.Exec("DELETE FROM tasks WHERE id = $1", taskID)
 	return err
@@ -88,7 +104,8 @@ func (r *TaskRepository) DeleteDependency(taskID, dependsOnID, userID int) error
 	if err != nil {
 		return err
 	}
-	if err := r.CheckAccess(pid, userID, true); err != nil {
+	// Для изменения структуры графа нужен вес Editor (40)
+	if _, err := r.CheckAccess(pid, userID, models.RoleWeights[models.RoleEditor]); err != nil {
 		return err
 	}
 	_, err = r.db.Exec(`DELETE FROM dependencies WHERE task_id = $1 AND depends_on_id = $2`, taskID, dependsOnID)
@@ -96,7 +113,8 @@ func (r *TaskRepository) DeleteDependency(taskID, dependsOnID, userID int) error
 }
 
 func (r *TaskRepository) ClearDependencies(projectID, userID int) error {
-	if err := r.CheckAccess(projectID, userID, true); err != nil {
+	// Сброс всех связей — деструктивное действие, нужен вес Admin (80)
+	if _, err := r.CheckAccess(projectID, userID, models.RoleWeights[models.RoleAdmin]); err != nil {
 		return err
 	}
 	_, err := r.db.Exec(`DELETE FROM dependencies WHERE task_id IN (SELECT id FROM tasks WHERE project_id = $1) OR depends_on_id IN (SELECT id FROM tasks WHERE project_id = $1)`, projectID)
@@ -104,12 +122,12 @@ func (r *TaskRepository) ClearDependencies(projectID, userID int) error {
 }
 
 func (r *TaskRepository) GetGraphData(projectID, userID int) (*models.GraphData, error) {
-	if err := r.CheckAccess(projectID, userID, false); err != nil {
+	// Для просмотра достаточно веса Viewer (10)
+	if _, err := r.CheckAccess(projectID, userID, models.RoleWeights[models.RoleViewer]); err != nil {
 		return nil, err
 	}
 	graph := &models.GraphData{}
 
-	// ИСПРАВЛЕНИЕ: Добавили COALESCE для графа!
 	query := `
 		SELECT 
 			id, title, opt, real, pess, 
@@ -121,45 +139,40 @@ func (r *TaskRepository) GetGraphData(projectID, userID int) (*models.GraphData,
 	`
 	rowsNodes, err := r.db.Query(query, projectID)
 	if err != nil {
-		return nil, err // Возвращаем ошибку, а не глотаем её!
+		return nil, err
 	}
 	defer rowsNodes.Close()
 
 	for rowsNodes.Next() {
 		var t models.Task
-		err := rowsNodes.Scan(&t.ID, &t.Title, &t.Opt, &t.Real, &t.Pess, &t.DurationHours, &t.PriorityScore, &t.Status)
-		if err != nil {
-			fmt.Println("Ошибка Scan в GetGraphData:", err) // Выведет в консоль, если что-то не так
-			continue
-		}
+		rowsNodes.Scan(&t.ID, &t.Title, &t.Opt, &t.Real, &t.Pess, &t.DurationHours, &t.PriorityScore, &t.Status)
 		graph.Nodes = append(graph.Nodes, t)
 	}
 
-	rowsEdges, err := r.db.Query(`SELECT d.depends_on_id, d.task_id FROM dependencies d JOIN tasks t ON d.task_id = t.id WHERE t.project_id = $1`, projectID)
-	if err == nil {
-		defer rowsEdges.Close()
-		for rowsEdges.Next() {
-			var e models.GraphEdge
-			rowsEdges.Scan(&e.From, &e.To)
-			graph.Edges = append(graph.Edges, e)
-		}
+	rowsEdges, _ := r.db.Query(`SELECT d.depends_on_id, d.task_id FROM dependencies d JOIN tasks t ON d.task_id = t.id WHERE t.project_id = $1`, projectID)
+	defer rowsEdges.Close()
+	for rowsEdges.Next() {
+		var e models.GraphEdge
+		rowsEdges.Scan(&e.From, &e.To)
+		graph.Edges = append(graph.Edges, e)
 	}
 
 	return graph, nil
 }
 
-// GetTasksByProject возвращает список всех задач конкретного проекта
 func (r *TaskRepository) GetTasksByProject(projectID, userID int) ([]models.Task, error) {
-	if err := r.CheckAccess(projectID, userID, false); err != nil {
+	// Для просмотра списка достаточно веса Viewer (10)
+	if _, err := r.CheckAccess(projectID, userID, models.RoleWeights[models.RoleViewer]); err != nil {
 		return nil, err
 	}
-	rows, err := r.db.Query(`SELECT id, project_id, user_id, assignee_id, title, status, opt, real, pess, 
-		COALESCE(duration_hours, 0.0), COALESCE(priority_score, 0.0) FROM tasks WHERE project_id = $1`, projectID)
+	var tasks []models.Task
+	query := `SELECT id, project_id, user_id, assignee_id, title, status, opt, real, pess, 
+		COALESCE(duration_hours, 0.0), COALESCE(priority_score, 0.0) FROM tasks WHERE project_id = $1`
+	rows, err := r.db.Query(query, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var tasks []models.Task
 	for rows.Next() {
 		var t models.Task
 		rows.Scan(&t.ID, &t.ProjectID, &t.UserID, &t.AssigneeID, &t.Title, &t.Status, &t.Opt, &t.Real, &t.Pess, &t.DurationHours, &t.PriorityScore)

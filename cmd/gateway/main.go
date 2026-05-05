@@ -60,6 +60,7 @@ func main() {
 		protected.GET("/projects/:project_id/tasks", taskProxy)
 
 		protected.DELETE("/projects/:project_id/members/:user_id", taskProxy)
+		protected.PATCH("/projects/:project_id/members/:user_id", taskProxy)
 	}
 
 	log.Println("API Gateway запущен на порту 8000")

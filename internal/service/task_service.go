@@ -48,7 +48,14 @@ func (s *TaskService) CreateTask(t *models.Task) (int, error) {
 
 func (s *TaskService) UpdateTask(t *models.Task) error {
 	pid, _ := s.repo.GetProjectIDByTask(t.ID)
-	err := s.repo.UpdateTask(t)
+
+	// Исследование: Чтобы менять Текст или Время задачи, ты должен быть хотя бы Редактором
+	_, err := s.repo.CheckAccess(pid, t.UserID, models.RoleWeights[models.RoleEditor])
+	if err != nil {
+		return err
+	}
+
+	err = s.repo.UpdateTask(t)
 	if err == nil {
 		s.triggerMathEngine(pid)
 	}
@@ -104,19 +111,25 @@ func (s *TaskService) GetGraph(ctx context.Context, projectID, userID int) (*mod
 }
 
 func (s *TaskService) UpdateTaskStatus(taskID, userID int, status string) error {
-	task, err := s.repo.GetByIDInternal(taskID) // ИСПРАВЛЕНИЕ: вызываем внутренний метод
+	task, err := s.repo.GetByIDInternal(taskID)
 	if err != nil {
 		return fmt.Errorf("задача не найдена")
 	}
 
-	var role string
-	s.repo.DB().QueryRow("SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2", task.ProjectID, userID).Scan(&role)
+	// Проверяем базовый доступ
+	role, err := s.repo.CheckAccess(task.ProjectID, userID, models.RoleWeights[models.RoleViewer])
+	if err != nil {
+		return err
+	}
 
+	// ГРАНУЛЯРНАЯ ЛОГИКА (Для диплома):
+	// Статус меняет либо Тот, кому поручили (Assignee),
+	// либо Менеджер проекта (Admin и выше)
 	isAssignee := task.AssigneeID != nil && *task.AssigneeID == userID
-	isPrivileged := role == "owner" || role == "admin"
+	isManager := models.RoleWeights[role] >= models.RoleWeights[models.RoleAdmin]
 
-	if !isAssignee && !isPrivileged {
-		return fmt.Errorf("менять статус может только исполнитель или администратор")
+	if !isAssignee && !isManager {
+		return fmt.Errorf("вы не исполнитель этой задачи и не администратор проекта")
 	}
 
 	err = s.repo.UpdateTaskStatus(taskID, status)

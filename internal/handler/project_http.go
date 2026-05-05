@@ -25,6 +25,8 @@ func (h *ProjectHandler) RegisterRoutes(protected *gin.RouterGroup) {
 	protected.POST("/projects/:project_id/members", h.addMember)
 	protected.GET("/projects/:project_id/members", h.getMembers)
 	protected.DELETE("/projects/:project_id/members/:user_id", h.removeMember)
+	// РЕГИСТРАЦИЯ PATCH
+	protected.PATCH("/projects/:project_id/members/:user_id", h.updateMemberRole)
 }
 
 func (h *ProjectHandler) getMembers(c *gin.Context) {
@@ -108,14 +110,37 @@ func (h *ProjectHandler) addMember(c *gin.Context) {
 	projectID, _ := strconv.Atoi(c.Param("project_id"))
 	var req struct {
 		Username string `json:"username" binding:"required"`
+		Role     string `json:"role" binding:"required"` // Добавили поле
 	}
+
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Укажите логин пользователя"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Укажите логин и роль"})
 		return
 	}
-	if err := h.service.AddMember(projectID, userID.(int), req.Username); err != nil {
+
+	if err := h.service.AddMember(projectID, userID.(int), req.Username, req.Role); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"message": "Пользователь успешно приглашен!"})
+	c.JSON(http.StatusOK, gin.H{"message": "Участник приглашен"})
+}
+
+func (h *ProjectHandler) updateMemberRole(c *gin.Context) {
+	ownerID, _ := c.Get("user_id")
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
+	targetUserID, _ := strconv.Atoi(c.Param("user_id"))
+	var req struct {
+		Role string `json:"role" binding:"required"`
+	}
+
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверная роль"})
+		return
+	}
+
+	if err := h.service.UpdateMemberRole(projectID, ownerID.(int), targetUserID, req.Role); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Роль обновлена"})
 }

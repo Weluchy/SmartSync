@@ -116,23 +116,39 @@ func (r *ProjectRepository) RenameProject(projectID, userID int, newName string)
 }
 
 // Приглашение друга по логину
-func (r *ProjectRepository) AddMember(projectID, ownerID int, username string) error {
-	// 1. Проверяем, что приглашает именно создатель проекта
+// Обновленный AddMember
+func (r *ProjectRepository) AddMember(projectID, ownerID int, username string, role string) error {
 	var actualOwner int
 	err := r.db.QueryRow("SELECT owner_id FROM projects WHERE id = $1", projectID).Scan(&actualOwner)
 	if err != nil || actualOwner != ownerID {
-		return fmt.Errorf("только создатель может приглашать участников")
+		return fmt.Errorf("только владелец может приглашать участников")
 	}
 
-	// 2. Ищем ID друга по его логину в таблице users (Shared DB Pattern)
 	var targetUserID int
 	err = r.db.QueryRow("SELECT id FROM users WHERE username = $1", username).Scan(&targetUserID)
 	if err != nil {
-		return fmt.Errorf("пользователь с таким логином не найден")
+		return fmt.Errorf("пользователь не найден")
 	}
 
-	// 3. Выдаем права редактора (может двигать задачи, но не может удалить проект)
-	_, err = r.db.Exec("INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, 'editor') ON CONFLICT DO NOTHING", projectID, targetUserID)
+	// Используем переданную роль вместо жесткого 'editor'
+	_, err = r.db.Exec(`
+		INSERT INTO project_members (project_id, user_id, role) 
+		VALUES ($1, $2, $3) 
+		ON CONFLICT (project_id, user_id) DO UPDATE SET role = $3`,
+		projectID, targetUserID, role)
+	return err
+}
+
+// Новый метод UpdateMemberRole
+func (r *ProjectRepository) UpdateMemberRole(projectID, ownerID, targetUserID int, newRole string) error {
+	var actualOwner int
+	r.db.QueryRow("SELECT owner_id FROM projects WHERE id = $1", projectID).Scan(&actualOwner)
+	if actualOwner != ownerID {
+		return fmt.Errorf("только владелец меняет роли")
+	}
+
+	_, err := r.db.Exec("UPDATE project_members SET role = $1 WHERE project_id = $2 AND user_id = $3",
+		newRole, projectID, targetUserID)
 	return err
 }
 
