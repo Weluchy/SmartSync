@@ -20,14 +20,10 @@ func NewProjectHandler(s *service.ProjectService) *ProjectHandler {
 func (h *ProjectHandler) RegisterRoutes(protected *gin.RouterGroup) {
 	protected.GET("/projects", h.getProjects)
 	protected.POST("/projects", h.createProject)
-
-	// ИСПРАВЛЕНИЕ ЗДЕСЬ: используем :project_id вместо :id
 	protected.DELETE("/projects/:project_id", h.deleteProject)
 	protected.PUT("/projects/:project_id", h.renameProject)
 	protected.POST("/projects/:project_id/members", h.addMember)
-
 	protected.GET("/projects/:project_id/members", h.getMembers)
-
 	protected.DELETE("/projects/:project_id/members/:user_id", h.removeMember)
 }
 
@@ -38,7 +34,6 @@ func (h *ProjectHandler) getMembers(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Не удалось загрузить участников"})
 		return
 	}
-
 	if members == nil {
 		members = []models.ProjectMember{}
 	}
@@ -49,7 +44,6 @@ func (h *ProjectHandler) removeMember(c *gin.Context) {
 	ownerID, _ := c.Get("user_id")
 	projectID, _ := strconv.Atoi(c.Param("project_id"))
 	targetUserID, _ := strconv.Atoi(c.Param("user_id"))
-
 	err := h.service.RemoveMember(projectID, ownerID.(int), targetUserID)
 	if err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
@@ -73,7 +67,6 @@ func (h *ProjectHandler) createProject(c *gin.Context) {
 	var req struct {
 		Name string `json:"name" binding:"required"`
 	}
-
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Имя не должно быть пустым"})
 		return
@@ -88,9 +81,7 @@ func (h *ProjectHandler) createProject(c *gin.Context) {
 
 func (h *ProjectHandler) deleteProject(c *gin.Context) {
 	userID, _ := c.Get("user_id")
-	// ИСПРАВЛЕНИЕ ЗДЕСЬ: читаем param "project_id"
 	projectID, _ := strconv.Atoi(c.Param("project_id"))
-
 	if err := h.service.DeleteProject(projectID, userID.(int)); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Только создатель может удалить проект"})
 		return
@@ -100,13 +91,11 @@ func (h *ProjectHandler) deleteProject(c *gin.Context) {
 
 func (h *ProjectHandler) renameProject(c *gin.Context) {
 	userID, _ := c.Get("user_id")
-	// ИСПРАВЛЕНИЕ ЗДЕСЬ: читаем param "project_id"
 	projectID, _ := strconv.Atoi(c.Param("project_id"))
 	var req struct {
 		Name string `json:"name" binding:"required"`
 	}
 	c.ShouldBindJSON(&req)
-
 	if err := h.service.RenameProject(projectID, userID.(int), req.Name); err != nil {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Только создатель может переименовать"})
 		return
@@ -116,17 +105,14 @@ func (h *ProjectHandler) renameProject(c *gin.Context) {
 
 func (h *ProjectHandler) addMember(c *gin.Context) {
 	userID, _ := c.Get("user_id")
-	// ИСПРАВЛЕНИЕ ЗДЕСЬ: читаем param "project_id"
 	projectID, _ := strconv.Atoi(c.Param("project_id"))
 	var req struct {
 		Username string `json:"username" binding:"required"`
 	}
-
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Укажите логин пользователя"})
 		return
 	}
-
 	if err := h.service.AddMember(projectID, userID.(int), req.Username); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return

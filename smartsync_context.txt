@@ -1061,7 +1061,7 @@ export default function KanbanBoard({ projectId }) {
     {task.created_by_name?.charAt(0) || '?'}
   </div>
   <span className="text-[10px] text-gray-400">
-    {task.created_by_name || 'Система'}
+    {task.created_by_name || 'Загрузка...'}
   </span>
 </div>
 
@@ -1069,10 +1069,19 @@ export default function KanbanBoard({ projectId }) {
 
 {/* НОВОЕ: Отображение автора */}
 <p className="text-[9px] text-gray-400 mt-1 uppercase font-medium">
-  Автор: {task.created_by_name || 'Система'}
+  Автор: {task.created_by_name || 'Загрузка...'}
 </p>
+
+{/* ВСТАВЬ КОД ИСПОЛНИТЕЛЯ СЮДА */}
+{task.assignee_id ? (
+   <p className="text-[10px] text-gray-500 mt-1 font-medium bg-gray-100 p-1.5 rounded w-fit">
+      Исп: <span className="font-bold text-gray-700">{task.assignee_name}</span>
+   </p>
+) : (
+   <p className="text-[10px] text-gray-400 mt-1 font-medium italic">Не назначен</p>
+)}
                         
-                        {isCritical && (
+{isCritical && (
                           <div className="flex items-center gap-1 text-[9px] text-red-600 font-bold mt-3 bg-red-100 w-fit px-2.5 py-1 rounded-full">
                             <AlertCircle size={10} /> КРИТИЧЕСКИЙ ВЕС
                           </div>
@@ -1104,14 +1113,6 @@ export default function KanbanBoard({ projectId }) {
   );
 }
 
-{/* Внутри карточки задачи, под блоком Автора */}
-{task.assignee_id ? (
-   <p className="text-[10px] text-gray-500 mt-1 font-medium bg-gray-100 p-1.5 rounded w-fit">
-      Исп: <span className="font-bold text-gray-700">{task.assignee_name}</span>
-   </p>
-) : (
-   <p className="text-[10px] text-gray-400 mt-1 font-medium italic">Не назначен</p>
-)}
 
 KanbanBoard.propTypes = {
   projectId: PropTypes.oneOfType([PropTypes.number, PropTypes.string])
@@ -1122,6 +1123,7 @@ KanbanBoard.propTypes = {
 import { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { X } from 'lucide-react';
+import { api } from '../../api/client'; 
 
 export default function TaskModal({ isOpen, onClose, onSave, projectId, initialData }) {
   const [formData, setFormData] = useState({
@@ -1389,7 +1391,7 @@ export default function UserProfile() {
 
 import { useState, useEffect, useCallback } from 'react'; // ИСПРАВЛЕНО: добавлены хуки
 import PropTypes from 'prop-types';
-import { Plus, Users, Send, Settings2, ShieldCheck } from 'lucide-react'; 
+import { Plus, Users, Send, Settings2 } from 'lucide-react'; 
 import { api } from '../../api/client';
 
 export default function Sidebar({ projects, currentProjectId, onSelectProject, onCreateProject, invitations = [] }) {
@@ -1495,29 +1497,32 @@ const removeMember = async (userId) => {
           </div>
 
           {/* Отрисовка списка людей из стейта members */}
+          
           <div className="space-y-2 mb-4 max-h-40 overflow-y-auto px-1">
             {members.map(member => (
-  <div key={member.id} className="flex items-center justify-between text-xs py-2 border-b border-gray-50 last:border-0 group">
-    <div className="flex flex-col">
-      <span className="text-gray-800 font-semibold">{member.username}</span>
-      <span className={`text-[9px] uppercase font-bold ${member.role === 'owner' ? 'text-blue-500' : 'text-gray-400'}`}>
-        {member.role}
-      </span>
-    </div>
-    
-    {/* ПРИКАЗ: Кнопка удаления видна только если это не владелец и текущий юзер имеет права */}
-    {member.role !== 'owner' && (
-      <button 
-        onClick={() => removeMember(member.id)}
-        className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all p-1"
-        title="Удалить из проекта"
-      >
-        <Plus size={14} className="rotate-45" /> 
-      </button>
-    )}
-  </div>
-))}
+              <div key={member.user_id} className="flex items-center justify-between text-xs py-2 border-b border-gray-50 last:border-0 group">
+                <div className="flex flex-col">
+                  <span className="text-gray-800 font-semibold">{member.username}</span>
+                  <span className={`text-[9px] uppercase font-bold ${member.role === 'owner' ? 'text-blue-500' : 'text-gray-400'}`}>
+                    {member.role}
+                  </span>
+                </div>
+                
+                {/* Кнопка удаления видна только если это не владелец */}
+                {member.role !== 'owner' && (
+                  <button 
+                    onClick={() => removeMember(member.user_id)}
+                    className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all p-1"
+                    title="Удалить из проекта"
+                  >
+                    <Plus size={14} className="rotate-45" /> 
+                  </button>
+                )}
+              </div>
+            ))}
           </div>
+
+          <form onSubmit={handleInvite} className="relative"></form>
 
           <form onSubmit={handleInvite} className="relative">
             <input 
@@ -2247,36 +2252,14 @@ package repository
 
 import (
 	"database/sql"
+	"fmt"
 	"smartsync/internal/auth/models"
 
 	"github.com/lib/pq"
-	// ДОБАВИТЬ ЭТОТ ИМПОРТ
 )
 
 type AuthRepository struct {
 	db *sql.DB
-}
-
-func (r *AuthRepository) GetUsersNames(ids []int) (map[int]string, error) {
-	result := make(map[int]string)
-	if len(ids) == 0 {
-		return result, nil
-	}
-
-	// Делаем один эффективный SQL-запрос с помощью ANY
-	rows, err := r.db.Query(`SELECT id, COALESCE(full_name, username) FROM users WHERE id = ANY($1)`, pq.Array(ids))
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-
-	for rows.Next() {
-		var id int
-		var name string
-		rows.Scan(&id, &name)
-		result[id] = name
-	}
-	return result, nil
 }
 
 func NewAuthRepository(db *sql.DB) *AuthRepository {
@@ -2286,36 +2269,44 @@ func NewAuthRepository(db *sql.DB) *AuthRepository {
 		password_hash VARCHAR(255) NOT NULL,
 		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 	)`)
-
-	// Безопасное добавление новых колонок для профиля
 	db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(100) DEFAULT ''`)
 	db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS stack VARCHAR(255) DEFAULT ''`)
 	db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(100) DEFAULT ''`)
-
 	return &AuthRepository{db: db}
 }
 
-// Получение профиля по ID
+// ВАЖНО: Возвращаем map[string]string, так как JSON-ключи всегда строки
+func (r *AuthRepository) GetUsersNames(ids []int) (map[string]string, error) {
+	result := make(map[string]string)
+	if len(ids) == 0 {
+		return result, nil
+	}
+	rows, err := r.db.Query(`SELECT id, COALESCE(full_name, username) FROM users WHERE id = ANY($1)`, pq.Array(ids))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int
+		var name string
+		rows.Scan(&id, &name)
+		result[fmt.Sprintf("%d", id)] = name
+	}
+	return result, nil
+}
+
 func (r *AuthRepository) GetProfileByID(userID int) (*models.User, error) {
 	user := &models.User{}
-	err := r.db.QueryRow(`
-		SELECT id, username, COALESCE(full_name, ''), COALESCE(stack, ''), COALESCE(status, '') 
-		FROM users WHERE id = $1`, userID).
-		Scan(&user.ID, &user.Username, &user.FullName, &user.Stack, &user.Status)
+	err := r.db.QueryRow(`SELECT id, username, COALESCE(full_name, ''), COALESCE(stack, ''), COALESCE(status, '') 
+		FROM users WHERE id = $1`, userID).Scan(&user.ID, &user.Username, &user.FullName, &user.Stack, &user.Status)
 	return user, err
 }
 
-// Обновление профиля
 func (r *AuthRepository) UpdateProfile(userID int, req models.ProfileUpdateRequest) error {
-	_, err := r.db.Exec(`
-		UPDATE users 
-		SET full_name = $1, stack = $2, status = $3 
-		WHERE id = $4`,
+	_, err := r.db.Exec(`UPDATE users SET full_name = $1, stack = $2, status = $3 WHERE id = $4`,
 		req.FullName, req.Stack, req.Status, userID)
 	return err
 }
-
-// ... (CreateUser и GetUserByUsername остаются как были)
 
 func (r *AuthRepository) CreateUser(username, passwordHash string) (int, error) {
 	var id int
@@ -2931,20 +2922,6 @@ func (h *ProjectHandler) RegisterRoutes(protected *gin.RouterGroup) {
 	protected.DELETE("/projects/:project_id/members/:user_id", h.removeMember)
 }
 
-func (h *ProjectHandler) removeMember(c *gin.Context) {
-	ownerID, _ := c.Get("user_id")
-	projectID, _ := strconv.Atoi(c.Param("project_id"))
-	targetUserID, _ := strconv.Atoi(c.Param("user_id"))
-
-	// Защита: удалять может только владелец
-	err := h.service.RemoveMember(projectID, ownerID.(int), targetUserID)
-	if err != nil {
-		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
-		return
-	}
-	c.JSON(http.StatusOK, gin.H{"message": "Участник удален"})
-}
-
 func (h *ProjectHandler) getMembers(c *gin.Context) {
 	projectID, _ := strconv.Atoi(c.Param("project_id"))
 	members, err := h.service.GetProjectMembers(projectID)
@@ -3121,21 +3098,22 @@ type TaskRepository struct {
 }
 
 func NewTaskRepository(db *sql.DB) *TaskRepository {
-	// Автоматическая миграция: добавляем колонку status, если её нет
 	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'todo'`)
-	db.Exec(`UPDATE tasks SET status = 'todo' WHERE status IS NULL`)
 	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignee_id INT REFERENCES users(id) ON DELETE SET NULL`)
 	return &TaskRepository{db: db}
 }
+
+func (r *TaskRepository) DB() *sql.DB { return r.db }
 
 func (r *TaskRepository) CheckAccess(projectID, userID int, requireWrite bool) error {
 	var role string
 	err := r.db.QueryRow("SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2", projectID, userID).Scan(&role)
 	if err != nil {
-		return fmt.Errorf("проект не найден или доступ запрещен")
+		return fmt.Errorf("доступ к проекту запрещен")
 	}
-	if requireWrite && role != "owner" && role != "editor" {
-		return fmt.Errorf("недостаточно прав для редактирования")
+	// viewer может только смотреть
+	if requireWrite && role == "viewer" {
+		return fmt.Errorf("недостаточно прав для редактирования (роль: viewer)")
 	}
 	return nil
 }
@@ -3146,14 +3124,24 @@ func (r *TaskRepository) GetProjectIDByTask(taskID int) (int, error) {
 	return pid, err
 }
 
+func (r *TaskRepository) GetByIDInternal(id int) (*models.Task, error) {
+	var t models.Task
+	err := r.db.QueryRow(
+		"SELECT id, project_id, status, title, user_id, assignee_id FROM tasks WHERE id = $1",
+		id,
+	).Scan(&t.ID, &t.ProjectID, &t.Status, &t.Title, &t.UserID, &t.AssigneeID)
+	return &t, err
+}
+
 func (r *TaskRepository) CreateTask(t *models.Task) (int, error) {
 	if err := r.CheckAccess(t.ProjectID, t.UserID, true); err != nil {
 		return 0, err
 	}
 	var id int
-	// При создании задача автоматически получает статус 'todo'
-	err := r.db.QueryRow("INSERT INTO tasks (title, opt, real, pess, user_id, project_id, status) VALUES ($1, $2, $3, $4, $5, $6, 'todo') RETURNING id",
-		t.Title, t.Opt, t.Real, t.Pess, t.UserID, t.ProjectID).Scan(&id)
+	err := r.db.QueryRow(`
+		INSERT INTO tasks (title, opt, real, pess, user_id, project_id, status, assignee_id) 
+		VALUES ($1, $2, $3, $4, $5, $6, 'todo', $7) RETURNING id`,
+		t.Title, t.Opt, t.Real, t.Pess, t.UserID, t.ProjectID, t.AssigneeID).Scan(&id)
 	return id, err
 }
 
@@ -3166,69 +3154,28 @@ func (r *TaskRepository) UpdateTask(t *models.Task) error {
 		return err
 	}
 
-	_, err = r.db.Exec("UPDATE tasks SET title = $1, opt = $2, real = $3, pess = $4 WHERE id = $5", t.Title, t.Opt, t.Real, t.Pess, t.ID)
+	_, err = r.db.Exec(`
+		UPDATE tasks 
+		SET title = $1, opt = $2, real = $3, pess = $4, assignee_id = $5 
+		WHERE id = $6`,
+		t.Title, t.Opt, t.Real, t.Pess, t.AssigneeID, t.ID)
 	return err
 }
 
 // НОВЫЙ МЕТОД: Изменение только статуса (для Канбана)
-func (r *TaskRepository) UpdateTaskStatus(taskID, userID int, status string) error {
-	pid, err := r.GetProjectIDByTask(taskID)
-	if err != nil {
-		return err
-	}
-	if err := r.CheckAccess(pid, userID, true); err != nil {
-		return err
-	}
-
-	_, err = r.db.Exec("UPDATE tasks SET status = $1 WHERE id = $2", status, taskID)
+func (r *TaskRepository) UpdateTaskStatus(taskID int, status string) error {
+	// Просто выполняем SQL. Проверка прав уже сделана в TaskService.UpdateTaskStatus
+	_, err := r.db.Exec("UPDATE tasks SET status = $1 WHERE id = $2", status, taskID)
 	return err
 }
 
 func (r *TaskRepository) DeleteTask(taskID, userID int, heal bool) error {
 	pid, err := r.GetProjectIDByTask(taskID)
-	if err != nil {
-		return err
+	if err != nil || r.CheckAccess(pid, userID, true) != nil {
+		return fmt.Errorf("нет доступа")
 	}
-	if err := r.CheckAccess(pid, userID, true); err != nil {
-		return err
-	}
-
-	tx, err := r.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-
-	if heal {
-		rowsP, _ := tx.Query("SELECT depends_on_id FROM dependencies WHERE task_id = $1", taskID)
-		var parents []int
-		for rowsP.Next() {
-			var p int
-			rowsP.Scan(&p)
-			parents = append(parents, p)
-		}
-		rowsP.Close()
-
-		rowsC, _ := tx.Query("SELECT task_id FROM dependencies WHERE depends_on_id = $1", taskID)
-		var children []int
-		for rowsC.Next() {
-			var c int
-			rowsC.Scan(&c)
-			children = append(children, c)
-		}
-		rowsC.Close()
-
-		for _, child := range children {
-			for _, parent := range parents {
-				tx.Exec("INSERT INTO dependencies (task_id, depends_on_id) VALUES ($1, $2) ON CONFLICT DO NOTHING", child, parent)
-			}
-		}
-	}
-	_, err = tx.Exec("DELETE FROM tasks WHERE id = $1", taskID)
-	if err != nil {
-		return err
-	}
-	return tx.Commit()
+	_, err = r.db.Exec("DELETE FROM tasks WHERE id = $1", taskID)
+	return err
 }
 
 func (r *TaskRepository) CreateDependency(taskID, dependsOnID int) error {
@@ -3303,62 +3250,35 @@ func (r *TaskRepository) GetGraphData(projectID, userID int) (*models.GraphData,
 
 // GetTasksByProject возвращает список всех задач конкретного проекта
 func (r *TaskRepository) GetTasksByProject(projectID, userID int) ([]models.Task, error) {
-	// 1. Сначала проверяем, есть ли у пользователя доступ к проекту
 	if err := r.CheckAccess(projectID, userID, false); err != nil {
 		return nil, err
 	}
-
 	var tasks []models.Task
-
-	// 2. Забираем ВСЕ задачи проекта (убрали фильтр по user_id)
-	query := `
-    SELECT 
-        id, project_id, user_id, assignee_id, title, status, opt, real, pess, 
-        COALESCE(duration_hours, 0.0), 
-        COALESCE(priority_score, 0.0) 
-    FROM tasks 
-    WHERE project_id = $1
-`
-
-	// Передаем только projectID
+	query := `SELECT id, project_id, user_id, assignee_id, title, status, opt, real, pess, 
+		COALESCE(duration_hours, 0.0), COALESCE(priority_score, 0.0) FROM tasks WHERE project_id = $1`
 	rows, err := r.db.Query(query, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
 	for rows.Next() {
 		var t models.Task
-		if err := rows.Scan(
-			&t.ID, &t.ProjectID, &t.UserID, &t.AssigneeID, &t.Title, &t.Status,
-			&t.Opt, &t.Real, &t.Pess,
-			&t.DurationHours, &t.PriorityScore,
-		); err != nil {
-			return nil, err
-		}
+		rows.Scan(&t.ID, &t.ProjectID, &t.UserID, &t.AssigneeID, &t.Title, &t.Status, &t.Opt, &t.Real, &t.Pess, &t.DurationHours, &t.PriorityScore)
 		tasks = append(tasks, t)
 	}
-
 	return tasks, nil
 }
 
 func (r *TaskRepository) GetDependenciesByProject(projectID int) ([]models.Dependency, error) {
-	rows, err := r.db.Query(`
-		SELECT d.task_id, d.depends_on_id 
-		FROM dependencies d
-		JOIN tasks t ON d.task_id = t.id
-		WHERE t.project_id = $1`, projectID)
+	rows, err := r.db.Query(`SELECT d.task_id, d.depends_on_id FROM dependencies d JOIN tasks t ON d.task_id = t.id WHERE t.project_id = $1`, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-
 	var deps []models.Dependency
 	for rows.Next() {
 		var d models.Dependency
-		if err := rows.Scan(&d.TaskID, &d.DependsOnID); err != nil {
-			return nil, err
-		}
+		rows.Scan(&d.TaskID, &d.DependsOnID)
 		deps = append(deps, d)
 	}
 	return deps, nil
@@ -3611,7 +3531,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt" // ДОБАВИТЬ
-	"log"
 	"net/http"
 	"smartsync/internal/models"
 	"smartsync/internal/repository"
@@ -3714,15 +3633,27 @@ func (s *TaskService) GetGraph(ctx context.Context, projectID, userID int) (*mod
 	return graph, false, err
 }
 
-// НОВЫЙ МЕТОД ДЛЯ КАНБАНА
 func (s *TaskService) UpdateTaskStatus(taskID, userID int, status string) error {
-	pid, _ := s.repo.GetProjectIDByTask(taskID)
-	err := s.repo.UpdateTaskStatus(taskID, userID, status)
+	task, err := s.repo.GetByIDInternal(taskID)
+	if err != nil {
+		return fmt.Errorf("задача не найдена")
+	}
 
+	var role string
+	// Если записи в project_members нет, Scan вернет ошибку, которую мы игнорируем (станет "")
+	s.repo.DB().QueryRow("SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2", task.ProjectID, userID).Scan(&role)
+
+	isAssignee := task.AssigneeID != nil && *task.AssigneeID == userID
+	// Добавляем роль 'admin' и 'owner' в список разрешенных
+	isPrivileged := role == "owner" || role == "admin"
+
+	if !isAssignee && !isPrivileged {
+		return fmt.Errorf("у вас роль '%s': менять статус может только исполнитель или администратор", role)
+	}
+
+	err = s.repo.UpdateTaskStatus(taskID, status)
 	if err == nil {
-		s.triggerMathEngine(pid)
-
-		// НОВОЕ: Отправляем событие аудита в NATS
+		s.triggerMathEngine(task.ProjectID)
 		auditMsg := fmt.Sprintf(`{"task_id": %d, "user_id": %d, "action": "STATUS_CHANGED", "new_status": "%s"}`, taskID, userID, status)
 		s.nc.Publish("audit.logs", []byte(auditMsg))
 	}
@@ -3730,67 +3661,52 @@ func (s *TaskService) UpdateTaskStatus(taskID, userID int, status string) error 
 }
 
 func (s *TaskService) GetTasksByProject(projectID, userID int) ([]models.Task, error) {
-	// Запрашиваем "голые" задачи из базы
 	tasks, err := s.repo.GetTasksByProject(projectID, userID)
 	if err != nil || len(tasks) == 0 {
 		return tasks, err
 	}
 
-	// 1. Собираем уникальные ID авторов, чтобы не запрашивать одно имя дважды
-	userIDs := make(map[int]bool)
+	userIDsMap := make(map[int]bool)
 	for _, t := range tasks {
-		userIDs[t.UserID] = true
+		userIDsMap[t.UserID] = true
 		if t.AssigneeID != nil {
-			userIDs[*t.AssigneeID] = true
+			userIDsMap[*t.AssigneeID] = true
 		}
 	}
 	var ids []int
-	for id := range userIDs {
+	for id := range userIDsMap {
 		ids = append(ids, id)
 	}
 
-	// 2. Делаем СИНХРОННЫЙ HTTP ЗАПРОС в Auth Service (порт 8081)
 	reqBody, _ := json.Marshal(map[string]interface{}{"ids": ids})
+	// Проверь, что Auth Service запущен именно на 8081
 	resp, err := http.Post("http://localhost:8081/internal/users/bulk", "application/json", bytes.NewBuffer(reqBody))
 
-	if err != nil {
-		log.Printf("❌ ОШИБКА: Не удалось связаться с Auth Service: %v\n", err)
-	} else if resp.StatusCode != http.StatusOK {
-		log.Printf("❌ ОШИБКА: Auth Service вернул статус %d\n", resp.StatusCode)
-	}
-
+	names := make(map[string]string)
 	if err == nil && resp.StatusCode == http.StatusOK {
 		defer resp.Body.Close()
-
-		var names map[string]string
-		if err := json.NewDecoder(resp.Body).Decode(&names); err != nil {
-			log.Printf("❌ ОШИБКА: Не удалось распарсить ответ от Auth Service: %v\n", err)
-		}
-
-		for i := range tasks {
-			// Обогащаем автора
-			authorIDStr := fmt.Sprintf("%d", tasks[i].UserID)
-			if name, ok := names[authorIDStr]; ok && name != "" {
-				tasks[i].CreatedByName = name
-			} else {
-				tasks[i].CreatedByName = "Неизвестный"
-			}
-
-			// Обогащаем исполнителя
-			if tasks[i].AssigneeID != nil {
-				assigneeIDStr := fmt.Sprintf("%d", *tasks[i].AssigneeID)
-				if name, ok := names[assigneeIDStr]; ok && name != "" {
-					tasks[i].AssigneeName = name
-				}
-			}
-		}
-	} else {
-		// Fallback: если Auth Service упал или вернул ошибку
-		for i := range tasks {
-			tasks[i].CreatedByName = "Система (Auth Service недоступен)"
-		}
+		json.NewDecoder(resp.Body).Decode(&names)
 	}
 
+	for i := range tasks {
+		// Обогащаем автора
+		uid := fmt.Sprintf("%d", tasks[i].UserID)
+		if val, ok := names[uid]; ok {
+			tasks[i].CreatedByName = val
+		} else {
+			tasks[i].CreatedByName = "Автор"
+		}
+
+		// Обогащаем исполнителя
+		if tasks[i].AssigneeID != nil {
+			aid := fmt.Sprintf("%d", *tasks[i].AssigneeID)
+			if val, ok := names[aid]; ok {
+				tasks[i].AssigneeName = val
+			} else {
+				tasks[i].AssigneeName = "Не назначен"
+			}
+		}
+	}
 	return tasks, nil
 }
 

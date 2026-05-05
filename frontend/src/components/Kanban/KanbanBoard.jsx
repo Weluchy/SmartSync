@@ -125,7 +125,7 @@ export default function KanbanBoard({ projectId }) {
     {task.created_by_name?.charAt(0) || '?'}
   </div>
   <span className="text-[10px] text-gray-400">
-    {task.created_by_name || 'Система'}
+    {task.created_by_name || 'Загрузка...'}
   </span>
 </div>
 
@@ -133,7 +133,7 @@ export default function KanbanBoard({ projectId }) {
 
 {/* НОВОЕ: Отображение автора */}
 <p className="text-[9px] text-gray-400 mt-1 uppercase font-medium">
-  Автор: {task.created_by_name || 'Система'}
+  Автор: {task.created_by_name || 'Загрузка...'}
 </p>
 
 {/* ВСТАВЬ КОД ИСПОЛНИТЕЛЯ СЮДА */}

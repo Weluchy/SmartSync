@@ -4,8 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt" // ДОБАВИТЬ
-	"log"
+	"fmt"
 	"net/http"
 	"smartsync/internal/models"
 	"smartsync/internal/repository"
@@ -25,12 +24,8 @@ func NewTaskService(repo *repository.TaskRepository, nc *nats.Conn, rdb *redis.C
 }
 
 func (s *TaskService) triggerMathEngine(projectID int) {
-	// Очищаем кэш в Redis, чтобы фронтенд получил свежие данные
 	s.redis.Del(context.Background(), fmt.Sprintf("smartsync:graph:project:%d", projectID))
-
-	// ВНИМАНИЕ: Тема должна быть project.updated, как мы договорились с движком
-	payload := fmt.Sprintf(`{"project_id": %d}`, projectID)
-	s.nc.Publish("project.updated", []byte(payload))
+	s.nc.Publish("project.updated", []byte(fmt.Sprintf(`{"project_id": %d}`, projectID)))
 }
 
 func (s *TaskService) CreateTask(t *models.Task) (int, error) {
@@ -108,15 +103,25 @@ func (s *TaskService) GetGraph(ctx context.Context, projectID, userID int) (*mod
 	return graph, false, err
 }
 
-// НОВЫЙ МЕТОД ДЛЯ КАНБАНА
 func (s *TaskService) UpdateTaskStatus(taskID, userID int, status string) error {
-	pid, _ := s.repo.GetProjectIDByTask(taskID)
-	err := s.repo.UpdateTaskStatus(taskID, userID, status)
+	task, err := s.repo.GetByIDInternal(taskID) // ИСПРАВЛЕНИЕ: вызываем внутренний метод
+	if err != nil {
+		return fmt.Errorf("задача не найдена")
+	}
 
+	var role string
+	s.repo.DB().QueryRow("SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2", task.ProjectID, userID).Scan(&role)
+
+	isAssignee := task.AssigneeID != nil && *task.AssigneeID == userID
+	isPrivileged := role == "owner" || role == "admin"
+
+	if !isAssignee && !isPrivileged {
+		return fmt.Errorf("менять статус может только исполнитель или администратор")
+	}
+
+	err = s.repo.UpdateTaskStatus(taskID, status)
 	if err == nil {
-		s.triggerMathEngine(pid)
-
-		// НОВОЕ: Отправляем событие аудита в NATS
+		s.triggerMathEngine(task.ProjectID)
 		auditMsg := fmt.Sprintf(`{"task_id": %d, "user_id": %d, "action": "STATUS_CHANGED", "new_status": "%s"}`, taskID, userID, status)
 		s.nc.Publish("audit.logs", []byte(auditMsg))
 	}
@@ -124,67 +129,50 @@ func (s *TaskService) UpdateTaskStatus(taskID, userID int, status string) error 
 }
 
 func (s *TaskService) GetTasksByProject(projectID, userID int) ([]models.Task, error) {
-	// Запрашиваем "голые" задачи из базы
 	tasks, err := s.repo.GetTasksByProject(projectID, userID)
 	if err != nil || len(tasks) == 0 {
 		return tasks, err
 	}
 
-	// 1. Собираем уникальные ID авторов, чтобы не запрашивать одно имя дважды
-	userIDs := make(map[int]bool)
+	userIDsMap := make(map[int]bool)
 	for _, t := range tasks {
-		userIDs[t.UserID] = true
+		userIDsMap[t.UserID] = true
 		if t.AssigneeID != nil {
-			userIDs[*t.AssigneeID] = true
+			userIDsMap[*t.AssigneeID] = true
 		}
 	}
 	var ids []int
-	for id := range userIDs {
+	for id := range userIDsMap {
 		ids = append(ids, id)
 	}
 
-	// 2. Делаем СИНХРОННЫЙ HTTP ЗАПРОС в Auth Service (порт 8081)
 	reqBody, _ := json.Marshal(map[string]interface{}{"ids": ids})
 	resp, err := http.Post("http://localhost:8081/internal/users/bulk", "application/json", bytes.NewBuffer(reqBody))
 
-	if err != nil {
-		log.Printf("❌ ОШИБКА: Не удалось связаться с Auth Service: %v\n", err)
-	} else if resp.StatusCode != http.StatusOK {
-		log.Printf("❌ ОШИБКА: Auth Service вернул статус %d\n", resp.StatusCode)
-	}
-
+	names := make(map[string]string)
 	if err == nil && resp.StatusCode == http.StatusOK {
 		defer resp.Body.Close()
-
-		var names map[string]string
-		if err := json.NewDecoder(resp.Body).Decode(&names); err != nil {
-			log.Printf("❌ ОШИБКА: Не удалось распарсить ответ от Auth Service: %v\n", err)
-		}
-
-		for i := range tasks {
-			// Обогащаем автора
-			authorIDStr := fmt.Sprintf("%d", tasks[i].UserID)
-			if name, ok := names[authorIDStr]; ok && name != "" {
-				tasks[i].CreatedByName = name
-			} else {
-				tasks[i].CreatedByName = "Неизвестный"
-			}
-
-			// Обогащаем исполнителя
-			if tasks[i].AssigneeID != nil {
-				assigneeIDStr := fmt.Sprintf("%d", *tasks[i].AssigneeID)
-				if name, ok := names[assigneeIDStr]; ok && name != "" {
-					tasks[i].AssigneeName = name
-				}
-			}
-		}
-	} else {
-		// Fallback: если Auth Service упал или вернул ошибку
-		for i := range tasks {
-			tasks[i].CreatedByName = "Система (Auth Service недоступен)"
-		}
+		json.NewDecoder(resp.Body).Decode(&names)
 	}
 
+	for i := range tasks {
+		uid := fmt.Sprintf("%d", tasks[i].UserID)
+		// ИСПРАВЛЕНИЕ: Проверяем val != ""
+		if val, ok := names[uid]; ok && val != "" {
+			tasks[i].CreatedByName = val
+		} else {
+			tasks[i].CreatedByName = "Неизвестный автор"
+		}
+
+		if tasks[i].AssigneeID != nil {
+			aid := fmt.Sprintf("%d", *tasks[i].AssigneeID)
+			if val, ok := names[aid]; ok && val != "" {
+				tasks[i].AssigneeName = val
+			} else {
+				tasks[i].AssigneeName = "Не назначен"
+			}
+		}
+	}
 	return tasks, nil
 }
 
