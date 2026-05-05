@@ -48,7 +48,11 @@ export default function KanbanBoard({ projectId }) {
     try {
       await api.patch(`/tasks/${taskId}/status`, { status: newStatus });
       setTimeout(loadTasks, 300);
-    } catch (err) { console.error(err); }
+    } catch (err) { 
+      // Выводим реальную ошибку из бэкенда (например, "только исполнитель может...")
+      alert(err.message); 
+      loadTasks(); // Сбрасываем положение карточки
+    }
   };
 
   useEffect(() => {

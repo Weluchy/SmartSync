@@ -1,42 +1,64 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"time"
 
 	"github.com/nats-io/nats.go"
+	"go.mongodb.org/mongo-driver/v2/mongo"
+	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
-// Модель лога аудита
+// Модель лога аудита (соответствует тому, что шлет Task Service)
 type AuditLog struct {
-	TaskID    int    `json:"task_id"`
-	UserID    int    `json:"user_id"`
-	Action    string `json:"action"`
-	NewStatus string `json:"new_status"`
-	Timestamp string `json:"timestamp"`
+	TaskID    int       `json:"task_id" bson:"task_id"`
+	UserID    int       `json:"user_id" bson:"user_id"`
+	Action    string    `json:"action" bson:"action"`
+	NewStatus string    `json:"new_status" bson:"new_status"`
+	CreatedAt time.Time `json:"created_at" bson:"created_at"`
 }
 
 func main() {
-	// Подключаемся к брокеру NATS
+	// 1. Подключение к MongoDB
+	mongoCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	client, err := mongo.Connect(options.Client().ApplyURI("mongodb://localhost:27017"))
+	if err != nil {
+		log.Fatal("❌ Ошибка MongoDB:", err)
+	}
+	defer client.Disconnect(mongoCtx)
+
+	collection := client.Database("smartsync_audit").Collection("logs")
+	log.Println("✅ Подключено к MongoDB")
+
+	// 2. Подключение к NATS
 	nc, err := nats.Connect("nats://localhost:4222")
 	if err != nil {
-		log.Fatal("Не удалось подключиться к NATS:", err)
+		log.Fatal("❌ Ошибка NATS:", err)
 	}
 	defer nc.Close()
 
-	log.Println("Audit Service запущен и ожидает события в топике 'audit.logs'...")
+	log.Println("🚀 Audit Service слушает топик 'audit.logs'...")
 
-	// Слушаем топик аудита
+	// 3. Подписка на события
 	_, err = nc.Subscribe("audit.logs", func(m *nats.Msg) {
-		var logEntry AuditLog
-		if err := json.Unmarshal(m.Data, &logEntry); err == nil {
-			logEntry.Timestamp = time.Now().Format(time.RFC3339)
+		var entry AuditLog
+		if err := json.Unmarshal(m.Data, &entry); err != nil {
+			log.Printf("⚠️ Ошибка парсинга: %v", err)
+			return
+		}
 
-			// Для диплома: здесь можно подключить MongoDB и делать collection.InsertOne(logEntry)
-			// Сейчас просто красиво выводим в консоль
-			log.Printf("[AUDIT] Пользователь ID:%d изменил статус задачи ID:%d на '%s' в %s\n",
-				logEntry.UserID, logEntry.TaskID, logEntry.NewStatus, logEntry.Timestamp)
+		entry.CreatedAt = time.Now()
+
+		// Сохраняем в MongoDB
+		_, err := collection.InsertOne(context.Background(), entry)
+		if err != nil {
+			log.Printf("❌ Ошибка записи в Mongo: %v", err)
+		} else {
+			log.Printf("📝 Записан лог: Задача %d -> %s (Юзер %d)", entry.TaskID, entry.NewStatus, entry.UserID)
 		}
 	})
 
@@ -44,6 +66,5 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Блокируем горутину, чтобы сервис работал вечно
-	select {}
+	select {} // Работаем вечно
 }

@@ -131,7 +131,6 @@ const removeMember = async (userId) => {
             ))}
           </div>
 
-          <form onSubmit={handleInvite} className="relative"></form>
 
           <form onSubmit={handleInvite} className="relative">
             <input 
