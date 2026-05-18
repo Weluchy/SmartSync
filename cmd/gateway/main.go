@@ -34,6 +34,9 @@ func main() {
 	r.POST("/login", authProxy)
 
 	taskProxy := reverseProxy("http://localhost:8080")
+	// Добавляем прокси для сервиса аудита
+	auditProxy := reverseProxy("http://localhost:8083")
+
 	protected := r.Group("/")
 	protected.Use(authMiddleware())
 	{
@@ -46,6 +49,8 @@ func main() {
 
 		protected.GET("/user/profile", authProxy)
 		protected.PUT("/user/profile", authProxy)
+		// НОВОЕ: Направляем запрос истории в Audit Service
+		protected.GET("/user/audit", auditProxy)
 
 		protected.GET("/invitations/my", taskProxy)
 		protected.GET("/projects/:project_id/members", taskProxy)
@@ -67,7 +72,6 @@ func main() {
 	r.Run(":8000")
 }
 
-// В файле main_2.go (Gateway)
 func authMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
@@ -86,7 +90,6 @@ func authMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Достаем ID и прокидываем его в заголовке для других сервисов
 		claims, _ := token.Claims.(jwt.MapClaims)
 		userID := fmt.Sprintf("%v", claims["user_id"])
 		c.Request.Header.Set("X-User-ID", userID) // Проброс заголовка
