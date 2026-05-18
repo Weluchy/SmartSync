@@ -7,8 +7,9 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
+node_modules/
+dist/
+.env
 dist-ssr
 *.local
 
@@ -22,3 +23,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.log
