@@ -10,9 +10,18 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/gorilla/websocket"
+	"github.com/nats-io/nats.go"
 )
 
 var jwtSecret = []byte("smartsync_diploma_secret_key_2026")
+
+// Настройка для WebSockets (разрешаем запросы с любых доменов)
+var upgrader = websocket.Upgrader{
+	CheckOrigin: func(r *http.Request) bool {
+		return true
+	},
+}
 
 func main() {
 	r := gin.Default()
@@ -29,12 +38,63 @@ func main() {
 		c.Next()
 	})
 
+	// Подключаемся к NATS для трансляции событий в реальном времени
+	nc, err := nats.Connect("nats://localhost:4222")
+	if err != nil {
+		log.Println("⚠️ ВНИМАНИЕ: NATS недоступен. WebSockets работать не будут.")
+	} else {
+		defer nc.Close()
+		log.Println("✅ Gateway подключен к NATS для трансляции событий (WebSockets)")
+	}
+
+	// Эндпоинт для WebSockets
+	// Эндпоинт для WebSockets
+	// Эндпоинт для WebSockets
+	r.GET("/ws", func(c *gin.Context) {
+		ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
+		if err != nil {
+			log.Println("❌ Ошибка Upgrade WS:", err)
+			return
+		}
+		defer ws.Close()
+
+		if nc == nil {
+			log.Println("❌ Ошибка WS: NATS не подключен!")
+			return
+		}
+
+		log.Println("🟢 Клиент подключился к WebSocket!")
+
+		// ИССЛЕДОВАНИЕ: Используем АСИНХРОННУЮ подписку (Event-Driven)
+		sub, err := nc.Subscribe("project.updated", func(msg *nats.Msg) {
+			log.Printf("📨 NATS поймал событие! Пушим в браузер: %s\n", string(msg.Data))
+			err := ws.WriteMessage(websocket.TextMessage, msg.Data)
+			if err != nil {
+				log.Println("❌ Ошибка отправки в WS:", err)
+			}
+		})
+
+		if err != nil {
+			log.Println("❌ Ошибка подписки NATS:", err)
+			return
+		}
+		defer sub.Unsubscribe()
+
+		// Удерживаем соединение открытым (читаем системные пинги)
+		for {
+			_, _, err := ws.ReadMessage()
+			if err != nil {
+				log.Println("🔴 Клиент отключился от WebSocket")
+				break
+			}
+		}
+	})
+
 	authProxy := reverseProxy("http://localhost:8081")
 	r.POST("/register", authProxy)
 	r.POST("/login", authProxy)
 
 	taskProxy := reverseProxy("http://localhost:8080")
-	// Добавляем прокси для сервиса аудита
 	auditProxy := reverseProxy("http://localhost:8083")
 
 	protected := r.Group("/")
@@ -49,7 +109,6 @@ func main() {
 
 		protected.GET("/user/profile", authProxy)
 		protected.PUT("/user/profile", authProxy)
-		// НОВОЕ: Направляем запрос истории в Audit Service
 		protected.GET("/user/audit", auditProxy)
 
 		protected.GET("/invitations/my", taskProxy)
@@ -92,7 +151,7 @@ func authMiddleware() gin.HandlerFunc {
 
 		claims, _ := token.Claims.(jwt.MapClaims)
 		userID := fmt.Sprintf("%v", claims["user_id"])
-		c.Request.Header.Set("X-User-ID", userID) // Проброс заголовка
+		c.Request.Header.Set("X-User-ID", userID)
 		c.Next()
 	}
 }

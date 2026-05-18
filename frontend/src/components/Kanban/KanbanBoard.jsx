@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { api } from '../../api/client';
-import { Plus, Trash2, AlertCircle } from 'lucide-react'; // Иконки используются ниже
+import { Plus, Trash2, AlertCircle } from 'lucide-react';
 import TaskModal from './TaskModal';
 
 const COLUMNS = [
@@ -23,7 +23,6 @@ export default function KanbanBoard({ projectId }) {
     } catch (err) { console.error(err); }
   }, [projectId]);
 
-
   const handleSaveTask = async (taskData) => {
     try {
       if (editingTask) await api.put(`/tasks/${editingTask.id}`, taskData);
@@ -33,7 +32,6 @@ export default function KanbanBoard({ projectId }) {
     } catch (err) { alert(err.message); }
   };
 
-  // ФУНКЦИЯ ИСПОЛЬЗУЕТСЯ в карточке ниже
   const deleteTask = async (e, id) => {
     e.stopPropagation();
     if (confirm('Удалить задачу?')) {
@@ -49,31 +47,50 @@ export default function KanbanBoard({ projectId }) {
       await api.patch(`/tasks/${taskId}/status`, { status: newStatus });
       setTimeout(loadTasks, 300);
     } catch (err) { 
-      // Выводим реальную ошибку из бэкенда (например, "только исполнитель может...")
       alert(err.message); 
-      loadTasks(); // Сбрасываем положение карточки
+      loadTasks(); 
     }
   };
 
   useEffect(() => {
-  loadTasks(); // Загрузка при открытии
+    loadTasks(); // Первичная загрузка
 
-  // ПРИКАЗ: Опрашивать бэкенд каждые 5 секунд, чтобы видеть перемещения задач коллегами
-  const interval = setInterval(() => {
-    loadTasks();
-  }, 5000);
+    const ws = new WebSocket('ws://localhost:8000/ws');
 
-  return () => clearInterval(interval);
-}, [loadTasks]);
-  // maxScore ИСПОЛЬЗУЕТСЯ для расчета критического пути
+    ws.onopen = () => console.log('✅ WebSocket подключен к API Gateway');
+
+    ws.onmessage = (event) => {
+      // ДЕБАГ: Выводим всё, что прилетает от сервера
+      console.log('📥 Получено сообщение по WS:', event.data); 
+      
+      try {
+        const data = JSON.parse(event.data);
+        if (data.project_id === Number(projectId)) {
+          console.log('🔄 Коллега изменил проект! Мгновенно обновляем доску...');
+          loadTasks();
+        }
+      } catch (e) {
+        console.error('Ошибка обработки WS-сообщения', e);
+      }
+    };
+
+    ws.onclose = () => console.log('❌ WebSocket отключен');
+
+    return () => {
+      // ИСПРАВЛЕНИЕ ОШИБКИ REACT STRICT MODE: 
+      // Закрываем сокет только если он успел полностью открыться
+      if (ws.readyState === 1) { 
+        ws.close();
+      }
+    };
+  }, [loadTasks, projectId]);
+
   const maxScore = tasks.length > 0 ? Math.max(...tasks.map(t => t.priority_score || 0)) : 0;
 
   return (
     <div className="h-full w-full bg-gray-50 p-6 overflow-hidden">
-      {/* ПРИКАЗ: Возвращаем bg-white вместо красного */}
       <div className="w-full h-full flex flex-col bg-white rounded-2xl shadow-xl border overflow-hidden transition-all">
         
-        {/* Хедер 72px */}
         <div className="h-[72px] min-h-[72px] px-8 border-b flex justify-between items-center bg-white z-10">
           <div>
             <h3 className="font-bold text-gray-700 uppercase text-xs tracking-widest">Канбан-доска</h3>
@@ -124,32 +141,25 @@ export default function KanbanBoard({ projectId }) {
                           </button>
                         </div>
                         <h4 className="text-sm font-bold text-gray-800 mt-2">{task.title}</h4>
-<div className="flex items-center gap-2 mt-2">
-  <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center text-[8px] text-white">
-    {task.created_by_name?.charAt(0) || '?'}
-  </div>
-  <span className="text-[10px] text-gray-400">
-    {task.created_by_name || 'Загрузка...'}
-  </span>
-</div>
 
+                        <div className="flex items-center gap-2 mt-2">
+                          <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center text-[8px] text-white">
+                            {task.created_by_name?.charAt(0) || '?'}
+                          </div>
+                          <span className="text-[10px] text-gray-400">
+                            {task.created_by_name || 'Загрузка...'}
+                          </span>
+                        </div>
 
-
-{/* НОВОЕ: Отображение автора */}
-<p className="text-[9px] text-gray-400 mt-1 uppercase font-medium">
-  Автор: {task.created_by_name || 'Загрузка...'}
-</p>
-
-{/* ВСТАВЬ КОД ИСПОЛНИТЕЛЯ СЮДА */}
-{task.assignee_id ? (
-   <p className="text-[10px] text-gray-500 mt-1 font-medium bg-gray-100 p-1.5 rounded w-fit">
-      Исп: <span className="font-bold text-gray-700">{task.assignee_name}</span>
-   </p>
-) : (
-   <p className="text-[10px] text-gray-400 mt-1 font-medium italic">Не назначен</p>
-)}
+                        {task.assignee_id ? (
+                           <p className="text-[10px] text-gray-500 mt-2 font-medium bg-gray-100 p-1.5 rounded w-fit">
+                              Исп: <span className="font-bold text-gray-700">{task.assignee_name}</span>
+                           </p>
+                        ) : (
+                           <p className="text-[10px] text-gray-400 mt-2 font-medium italic">Не назначен</p>
+                        )}
                         
-{isCritical && (
+                        {isCritical && (
                           <div className="flex items-center gap-1 text-[9px] text-red-600 font-bold mt-3 bg-red-100 w-fit px-2.5 py-1 rounded-full">
                             <AlertCircle size={10} /> КРИТИЧЕСКИЙ ВЕС
                           </div>
@@ -180,7 +190,6 @@ export default function KanbanBoard({ projectId }) {
     </div>
   );
 }
-
 
 KanbanBoard.propTypes = {
   projectId: PropTypes.oneOfType([PropTypes.number, PropTypes.string])
