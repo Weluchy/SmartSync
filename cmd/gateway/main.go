@@ -5,7 +5,8 @@ import (
 	"log"
 	"net/http"
 	"net/http/httputil"
-	"net/url"
+	"net/url" // Добавили для чтения переменных окружения
+	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -38,13 +39,18 @@ func main() {
 		c.Next()
 	})
 
-	// Подключаемся к NATS для трансляции событий в реальном времени
-	nc, err := nats.Connect("nats://localhost:4222")
+	natsURL := getEnv("NATS_URL", "nats://localhost:4222")
+	authURL := getEnv("AUTH_SERVICE_URL", "http://localhost:8081")
+	taskURL := getEnv("TASK_SERVICE_URL", "http://localhost:8080")
+	auditURL := getEnv("AUDIT_SERVICE_URL", "http://localhost:8083")
+
+	// Подключаемся к NATS
+	nc, err := nats.Connect(natsURL)
 	if err != nil {
 		log.Println("⚠️ ВНИМАНИЕ: NATS недоступен. WebSockets работать не будут.")
 	} else {
 		defer nc.Close()
-		log.Println("✅ Gateway подключен к NATS для трансляции событий (WebSockets)")
+		log.Println("✅ Gateway подключен к NATS для трансляции событий")
 	}
 
 	// Эндпоинт для WebSockets
@@ -90,12 +96,13 @@ func main() {
 		}
 	})
 
-	authProxy := reverseProxy("http://localhost:8081")
+	// Динамические прокси вместо жесткого localhost
+	authProxy := reverseProxy(authURL)
 	r.POST("/register", authProxy)
 	r.POST("/login", authProxy)
 
-	taskProxy := reverseProxy("http://localhost:8080")
-	auditProxy := reverseProxy("http://localhost:8083")
+	taskProxy := reverseProxy(taskURL)
+	auditProxy := reverseProxy(auditURL)
 
 	protected := r.Group("/")
 	protected.Use(authMiddleware())
@@ -129,6 +136,13 @@ func main() {
 
 	log.Println("API Gateway запущен на порту 8000")
 	r.Run(":8000")
+}
+
+func getEnv(key, fallback string) string {
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+	return fallback
 }
 
 func authMiddleware() gin.HandlerFunc {

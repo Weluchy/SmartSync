@@ -49,6 +49,59 @@ services:
       - prometheus
     restart: unless-stopped
     
+  # Наш API Шлюз
+  gateway:
+    build:
+      context: .
+      args:
+        SERVICE_NAME: gateway
+    container_name: smartsync_gateway
+    ports:
+      - "8000:8000"
+    depends_on:
+      - nats
+      - postgres
+    restart: unless-stopped
+    environment:
+      # Шлюз будет перенаправлять запросы на внутренние имена докер-контейнеров
+      - NATS_URL=nats://nats:4222
+      - AUTH_SERVICE_URL=http://auth-service:8081
+      - TASK_SERVICE_URL=http://task-service:8080
+      - AUDIT_SERVICE_URL=http://audit-service:8083
+
+  # Сервис авторизации
+  auth-service:
+    build:
+      context: .
+      args:
+        SERVICE_NAME: auth-service
+    container_name: smartsync_auth_service
+    ports:
+      - "8081:8081"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    environment:
+      - DATABASE_URL=postgres://user:password@postgres:5432/smartsync?sslmode=disable
+  # Наш Task Service (Математический движок)
+  task-service:
+    build:
+      context: .
+      args:
+        SERVICE_NAME: task-service
+    container_name: smartsync_task_service
+    ports:
+      - "8080:8080"
+    depends_on:
+      - nats
+      - postgres
+      - redis
+    restart: unless-stopped
+    environment:
+      # Указываем внутренние имена контейнеров и их стандартные порты
+      - NATS_URL=nats://nats:4222
+      - REDIS_ADDR=redis:6379
+      - DATABASE_URL=postgres://user:password@postgres:5432/smartsync?sslmode=disable
 volumes:
   mongo_data:
   

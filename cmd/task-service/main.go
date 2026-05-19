@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"log"
+	"os" // Добавили для чтения переменных окружения
 
 	"smartsync/internal/handler"
 	"smartsync/internal/repository"
@@ -13,24 +14,36 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
-	// Добавь этот импорт
 )
 
+// Вспомогательная функция для чтения переменных окружения
+func getEnv(key, fallback string) string {
+	if value, ok := os.LookupEnv(key); ok {
+		return value
+	}
+	return fallback
+}
+
 func main() {
+	// Читаем настройки из окружения Docker, либо используем локальные по умолчанию
+	dbURL := getEnv("DATABASE_URL", "postgres://user:password@127.0.0.1:5433/smartsync?sslmode=disable")
+	redisAddr := getEnv("REDIS_ADDR", "127.0.0.1:6379")
+	natsURL := getEnv("NATS_URL", "nats://localhost:4222")
+
 	// Подключение к Postgres
-	db, err := sql.Open("postgres", "postgres://user:password@127.0.0.1:5433/smartsync?sslmode=disable")
+	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Ошибка БД: ", err)
 	}
 	defer db.Close()
 
 	// Подключение к Redis
-	rdb := redis.NewClient(&redis.Options{Addr: "127.0.0.1:6379"})
+	rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
 
 	// Подключение к NATS
-	nc, err := nats.Connect("nats://localhost:4222")
+	nc, err := nats.Connect(natsURL)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Ошибка NATS: ", err)
 	}
 	defer nc.Close()
 
@@ -44,9 +57,7 @@ func main() {
 
 	// 3. Сборка контроллера и запуск
 	httpHandler := handler.NewHandler(taskService, projectService)
-
 	router := httpHandler.InitRoutes()
-
 	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 
 	log.Println("Task Service запущен на порту 8080")
