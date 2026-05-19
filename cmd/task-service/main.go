@@ -8,9 +8,12 @@ import (
 	"smartsync/internal/repository"
 	"smartsync/internal/service"
 
+	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
 	"github.com/nats-io/nats.go"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
+	// Добавь этот импорт
 )
 
 func main() {
@@ -44,6 +47,8 @@ func main() {
 
 	router := httpHandler.InitRoutes()
 
-	log.Println("Task Service [Модульный] запущен на порту 8080")
+	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
+
+	log.Println("Task Service запущен на порту 8080")
 	router.Run(":8080")
 }
