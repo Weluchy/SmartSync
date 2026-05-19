@@ -102,6 +102,23 @@ services:
       - NATS_URL=nats://nats:4222
       - REDIS_ADDR=redis:6379
       - DATABASE_URL=postgres://user:password@postgres:5432/smartsync?sslmode=disable
+
+  # Наш Математический движок (PERT)
+  priority-service:
+    build:
+      context: .
+      args:
+        SERVICE_NAME: priority-service
+    container_name: smartsync_priority_service
+    depends_on:
+      - nats
+      - postgres
+      - redis
+    restart: unless-stopped
+    environment:
+      - NATS_URL=nats://nats:4222
+      - REDIS_ADDR=redis:6379
+      - DATABASE_URL=postgres://user:password@postgres:5432/smartsync?sslmode=disable
 volumes:
   mongo_data:
   

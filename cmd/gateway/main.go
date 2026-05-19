@@ -5,17 +5,36 @@ import (
 	"log"
 	"net/http"
 	"net/http/httputil"
-	"net/url" // Добавили для чтения переменных окружения
+	"net/url"
 	"os"
 	"strings"
+	"time" // Добавили
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 	"github.com/nats-io/nats.go"
+	"github.com/sony/gobreaker" // Добавили библиотеку предохранителя
 )
 
 var jwtSecret = []byte("smartsync_diploma_secret_key_2026")
+var cb *gobreaker.CircuitBreaker
+
+func init() {
+	// Настройки предохранителя
+	st := gobreaker.Settings{
+		Name:        "Microservices-Gateway-CB",
+		MaxRequests: 3,               // Сколько тестовых запросов пускать при проверке оживления
+		Interval:    5 * time.Second, // Период сброса счетчиков
+		Timeout:     7 * time.Second, // Как долго цепь остается разомкнутой
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			// Цепь размыкается, если было > 3 запросов и > 50% из них упали
+			failureRatio := float64(counts.TotalFailures) / float64(counts.Requests)
+			return counts.Requests >= 3 && failureRatio >= 0.5
+		},
+	}
+	cb = gobreaker.NewCircuitBreaker(st)
+}
 
 // Настройка для WebSockets (разрешаем запросы с любых доменов)
 var upgrader = websocket.Upgrader{
@@ -171,9 +190,37 @@ func authMiddleware() gin.HandlerFunc {
 }
 
 func reverseProxy(target string) gin.HandlerFunc {
-	url, _ := url.Parse(target)
-	proxy := httputil.NewSingleHostReverseProxy(url)
+	targetURL, _ := url.Parse(target)
+	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+
+	// Перехватываем системные ошибки прокси (например, сервис физически выключен)
+	proxy.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, err error) {
+		rw.WriteHeader(http.StatusBadGateway) // 502 код
+		rw.Write([]byte(fmt.Sprintf(`{"error": "Внутренний сервис %s недоступен"}`, targetURL.Host)))
+	}
+
 	return func(c *gin.Context) {
-		proxy.ServeHTTP(c.Writer, c.Request)
+		// Пропускаем запрос через предохранитель
+		_, err := cb.Execute(func() (interface{}, error) {
+
+			proxy.ServeHTTP(c.Writer, c.Request)
+
+			// Если сервис вернул статус 5xx, считаем это поломкой микросервиса
+			if c.Writer.Status() >= http.StatusInternalServerError {
+				return nil, fmt.Errorf("микросервис вернул ошибку сервера")
+			}
+			return nil, nil
+		})
+
+		// Обработка состояния разомкнутой цепи
+		if err != nil {
+			if err == gobreaker.ErrOpenState {
+				// Цепь разомкнута: рубим запрос сразу, не нагружая упавший сервис!
+				c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
+					"error": "Система перегружена. Включился предохранитель (Circuit Breaker). Подождите 7 секунд.",
+					"state": "OPEN",
+				})
+			}
+		}
 	}
 }
