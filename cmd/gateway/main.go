@@ -73,8 +73,6 @@ func main() {
 	}
 
 	// Эндпоинт для WebSockets
-	// Эндпоинт для WebSockets
-	// Эндпоинт для WebSockets
 	r.GET("/ws", func(c *gin.Context) {
 		ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
