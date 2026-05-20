@@ -49,6 +49,21 @@ services:
       - prometheus
     restart: unless-stopped
     
+
+  # Наш Сервис Аудита (Логи)
+  audit-service:
+    build:
+      context: .
+      args:
+        SERVICE_NAME: audit-service
+    container_name: smartsync_audit_service
+    depends_on:
+      - nats
+      - mongodb
+    restart: unless-stopped
+    environment:
+      - NATS_URL=nats://nats:4222
+      - MONGO_URI=mongodb://mongodb:27017
   # Наш API Шлюз
   gateway:
     build:

@@ -1,127 +1,78 @@
-import { useState, useEffect } from 'react';
-import PropTypes from 'prop-types';
-import { X } from 'lucide-react';
-import { api } from '../../api/client'; 
+/* eslint-disable react/prop-types */
+/* eslint-disable no-unused-vars */
+import React, { useState, useEffect } from 'react';
+import { api } from '../../api/client';
+const TaskModal = ({ isOpen, onClose, task }) => {
+  const [logs, setLogs] = useState([]);
 
-export default function TaskModal({ isOpen, onClose, onSave, projectId, initialData }) {
-  const [formData, setFormData] = useState({
-    title: '',
-    opt: 1,
-    real: 2,
-    pess: 3,
-    status: 'todo'
-  });
-  const [members, setMembers] = useState([]);
-
+  // Загружаем логи каждый раз, когда открывается окно задачи
   useEffect(() => {
-  if (isOpen && projectId) {
-    api.get(`/projects/${projectId}/members`).then(data => setMembers(data || []));
-  }
-  if (initialData) {
-    setFormData({ ...initialData, assignee_id: initialData.assignee_id || '' });
-  } else {
-    setFormData({ title: '', opt: 1, real: 2, pess: 3, status: 'todo', assignee_id: '' });
-  }
-}, [initialData, isOpen, projectId]); 
+    if (isOpen && task && task.id) {
+      api.get(`/logs/${task.id}`)
+        .then(res => setLogs(res.data || []))
+        .catch(err => console.error("Ошибка загрузки логов:", err));
+    }
+  }, [isOpen, task]);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e) => {
-  e.preventDefault();
-  onSave({
-    ...formData,
-    assignee_id: formData.assignee_id ? parseInt(formData.assignee_id) : null,
-      opt: parseFloat(formData.opt),
-      real: parseFloat(formData.real),
-      pess: parseFloat(formData.pess),
-      project_id: projectId
-    });
-    onClose();
-  };
-
   return (
-    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
-        <div className="flex justify-between items-center p-6 border-b">
-          <h2 className="text-xl font-bold text-gray-800">
-            {initialData ? 'Редактировать задачу' : 'Новая задача'}
-          </h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
-            <X size={24} />
-          </button>
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg p-6 w-full max-w-md">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-xl font-bold">{task.title}</h3>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700">✕</button>
         </div>
-
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        
+        <div className="space-y-4">
           <div>
-            <label className="block text-sm font-bold text-gray-700 mb-1">Название задачи</label>
-            <input
-              required
-              className="w-full border rounded-lg p-2.5 bg-gray-50 focus:ring-2 focus:ring-blue-500 outline-none"
-              value={formData.title}
-              onChange={e => setFormData({...formData, title: e.target.value})}
-            />
+            <p className="text-sm text-gray-500">Описание</p>
+            <p className="mt-1">{task.description || 'Нет описания'}</p>
           </div>
-
-          <div className="grid grid-cols-3 gap-3">
+          
+          <div className="flex justify-between">
             <div>
-              <label className="block text-[10px] font-black text-green-600 uppercase mb-1">Оптим.</label>
-              <input
-                type="number"
-                className="w-full border rounded-lg p-2 bg-gray-50"
-                value={formData.opt}
-                onChange={e => setFormData({...formData, opt: e.target.value})}
-              />
+              <p className="text-sm text-gray-500">Статус</p>
+              <span className="inline-block mt-1 px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                {task.status}
+              </span>
             </div>
             <div>
-              <label className="block text-[10px] font-black text-blue-600 uppercase mb-1">Реал.</label>
-              <input
-                type="number"
-                className="w-full border rounded-lg p-2 bg-gray-50"
-                value={formData.real}
-                onChange={e => setFormData({...formData, real: e.target.value})}
-              />
-            </div>
-            <div>
-              <label className="block text-[10px] font-black text-red-600 uppercase mb-1">Пессим.</label>
-              <input
-                type="number"
-                className="w-full border rounded-lg p-2 bg-gray-50"
-                value={formData.pess}
-                onChange={e => setFormData({...formData, pess: e.target.value})}
-              />
+              <p className="text-sm text-gray-500">Исполнитель</p>
+              <p className="mt-1 text-sm font-medium">Не назначен</p>
             </div>
           </div>
 
-          <div>
-  <label className="block text-sm font-bold text-gray-700 mb-1">Исполнитель</label>
-  <select
-    className="w-full border rounded-lg p-2.5 bg-gray-50 outline-none"
-    value={formData.assignee_id || ''}
-    onChange={e => setFormData({...formData, assignee_id: e.target.value})}
-  >
-    <option value="">Не назначен</option>
-    {members.map(m => (
-      <option key={m.user_id} value={m.user_id}>{m.username}</option>
-    ))}
-  </select>
-</div>
-
-          <div className="pt-4 flex gap-3">
-            <button type="button" onClick={onClose} className="flex-1 py-3 border rounded-xl font-bold">Отмена</button>
-            <button type="submit" className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold">
-              {initialData ? 'Сохранить' : 'Создать'}
-            </button>
+          <div className="mt-6 pt-4 border-t">
+            <h4 className="font-semibold mb-2">История (Аудит)</h4>
+            <div className="bg-gray-50 p-3 rounded h-36 overflow-y-auto pr-2">
+              {logs.length > 0 ? (
+                <ul className="space-y-2 text-sm">
+                  {logs.map((log, i) => (
+                    <li key={i} className="border-b border-gray-200 pb-2">
+                      <div className="flex justify-between text-blue-700 font-medium">
+                        <span>{log.action === 'updated' ? 'Обновление статуса' : 'Создание'}</span>
+                        <span className="text-xs text-gray-400 font-normal">
+                          {new Date(log.timestamp).toLocaleString('ru-RU')}
+                        </span>
+                      </div>
+                      {log.payload && log.payload.status && (
+                        <p className="text-xs mt-1 text-gray-600">
+                          Новый статус: <span className="font-semibold">{log.payload.status}</span>
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-gray-500 text-sm italic text-center mt-4">История пуста</p>
+              )}
+            </div>
           </div>
-        </form>
+        </div>
       </div>
     </div>
   );
-}
-
-TaskModal.propTypes = {
-  isOpen: PropTypes.bool.isRequired,
-  onClose: PropTypes.func.isRequired,
-  onSave: PropTypes.func.isRequired,
-  projectId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-  initialData: PropTypes.object
 };
+
+export default TaskModal;
