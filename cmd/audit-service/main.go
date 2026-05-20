@@ -24,41 +24,54 @@ func getEnv(key, fallback string) string {
 }
 
 func main() {
-	mongoURI := getEnv("MONGO_URI", "mongodb://127.0.0.1:27017")
-	natsURL := getEnv("NATS_URL", "nats://localhost:4222")
+	// ИСПРАВЛЕНО: для Docker используем имена сервисов nats и mongodb
+	mongoURI := getEnv("MONGO_URI", "mongodb://mongodb:27017")
+	natsURL := getEnv("NATS_URL", "nats://nats:4222")
 
 	// 1. Подключение к MongoDB
 	client, err := mongo.Connect(context.TODO(), options.Client().ApplyURI(mongoURI))
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Audit-service ошибка Mongo: ", err)
 	}
 	collection := client.Database("smartsync").Collection("audit_logs")
 
 	// 2. Подключение к NATS
 	nc, err := nats.Connect(natsURL)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("Audit-service ошибка NATS: ", err)
 	}
 	defer nc.Close()
 
-	// 3. Подписка на события (Асинхронная запись)
+	// 3. Асинхронная подписка на события задач
 	nc.Subscribe("task.*", func(m *nats.Msg) {
 		var event map[string]interface{}
 		if err := json.Unmarshal(m.Data, &event); err == nil {
 			event["timestamp"] = time.Now()
-			collection.InsertOne(context.TODO(), bson.M{
-				"action":    event["action"],
-				"task_id":   event["task_id"],
-				"payload":   event["payload"],
-				"timestamp": event["timestamp"],
-			})
-			log.Println("Записан лог аудита для задачи:", event["task_id"])
+			_, insErr := collection.InsertOne(context.TODO(), event)
+			if insErr != nil {
+				log.Println("Ошибка записи лога в Mongo:", insErr)
+			} else {
+				log.Println("Успешно сохранен лог для задачи:", event["task_id"])
+			}
 		}
 	})
 
-	// 4. HTTP-сервер для выдачи логов фронтенду
 	r := gin.Default()
 
+	// Настройка CORS для локальных тестов, если это необходимо
+	r.Use(func(c *gin.Context) {
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, accept, origin, Cache-Control, X-Requested-With")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, PATCH")
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+		c.Next()
+	})
+
+	// Маршрут 1: Логи конкретной задачи для TaskModal.jsx
 	r.GET("/logs/:task_id", func(c *gin.Context) {
 		taskIDStr := c.Param("task_id")
 		taskID, err := strconv.Atoi(taskIDStr)
@@ -67,9 +80,14 @@ func main() {
 			return
 		}
 
-		// ИССЛЕДОВАНИЕ: Защита от несовпадения типов int и float64 в MongoDB
-		filter := bson.M{"task_id": bson.M{"$in": []interface{}{taskID, float64(taskID)}}}
-		opts := options.Find().SetSort(bson.D{{Key: "timestamp", Value: -1}}) // -1 означает новые сверху
+		// ИСПРАВЛЕНО: учитываем особенности float64/int при десериализации JSON из NATS
+		filter := bson.M{
+			"$or": []bson.M{
+				{"task_id": taskID},
+				{"task_id": float64(taskID)},
+			},
+		}
+		opts := options.Find().SetSort(bson.D{{"timestamp", -1}})
 
 		cursor, err := collection.Find(context.TODO(), filter, opts)
 		if err != nil {
@@ -90,11 +108,9 @@ func main() {
 		c.JSON(http.StatusOK, logs)
 	})
 
-	// ИССЛЕДОВАНИЕ: Маршрут для страницы профиля (Лента активности)
+	// Маршрут 2: Общая лента аудита для UserProfile.jsx
 	r.GET("/user/audit", func(c *gin.Context) {
-		// Просто берем 20 самых свежих логов из базы
-		opts := options.Find().SetSort(bson.D{{"timestamp", -1}}).SetLimit(20)
-
+		opts := options.Find().SetSort(bson.D{{"timestamp", -1}}).SetLimit(30)
 		cursor, err := collection.Find(context.TODO(), bson.M{}, opts)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка БД"})
@@ -104,7 +120,7 @@ func main() {
 
 		var logs []bson.M
 		if err = cursor.All(context.TODO(), &logs); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка чтения логов"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка парсинга логов"})
 			return
 		}
 
@@ -114,6 +130,6 @@ func main() {
 		c.JSON(http.StatusOK, logs)
 	})
 
-	log.Println("✅ Audit Service запущен на порту 8083")
-	r.Run(":8083") // Теперь сервер держит процесс, select{} больше не нужен
+	log.Println("✅ Audit Service успешно запущен на порту 8083")
+	r.Run(":8083")
 }

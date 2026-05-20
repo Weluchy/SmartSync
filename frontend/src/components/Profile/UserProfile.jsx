@@ -21,8 +21,10 @@ export default function UserProfile() {
 
   const loadAuditLogs = async () => {
     try {
-      const logs = await api.get('/user/audit');
-      if (logs) setAuditLogs(logs);
+      const response = await api.get('/user/audit');
+      // В response.data уже лежит готовый массив от axios
+      console.log(response.data)
+      setAuditLogs(response.data || []);
     } catch (err) {
       console.error("Ошибка загрузки истории аудита:", err);
     }
