@@ -11,6 +11,7 @@ export default function UserProfile() {
   });
 
   const [auditLogs, setAuditLogs] = useState([]);
+  const [userNames, setUserNames] = useState({});
 
   const loadProfile = async () => {
     try {
@@ -23,6 +24,13 @@ export default function UserProfile() {
     try {
       const logs = await api.get('/user/audit');
       setAuditLogs(logs || []);
+
+      // Собираем все user_id из логов, чтобы получить имена
+      const userIds = [...new Set((logs || []).map(l => l.user_id).filter(Boolean))];
+      if (userIds.length > 0) {
+        const namesMap = await api.post('/internal/users/bulk', { ids: userIds });
+        if (namesMap) setUserNames(namesMap);
+      }
     } catch (err) {
       console.error("Ошибка загрузки истории аудита:", err);
     }
@@ -99,31 +107,58 @@ export default function UserProfile() {
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="bg-gray-50 text-gray-400 font-bold uppercase border-b text-[10px]">
-                      <th className="p-3">Время действия</th>
+                      <th className="p-3">Время</th>
                       <th className="p-3">ID задачи</th>
-                      <th className="p-3">Операция</th>
-                      <th className="p-3">Новое состояние</th>
+                      <th className="p-3">Кто</th>
+                      <th className="p-3">Действие</th>
+                      <th className="p-3">Что изменилось</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y text-gray-600">
-                    {auditLogs.map((log, index) => (
+                    {auditLogs.map((log, index) => {
+                      const time = new Date(log.timestamp);
+                      const timeStr = time.toLocaleString('ru-RU', {
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        day: 'numeric',
+                        month: 'numeric',
+                        year: 'numeric'
+                      });
+
+                      const actionLabel = log.action === 'updated' ? 'Обновление' 
+                        : log.action === 'created' ? 'Создание' 
+                        : log.action === 'status_changed' ? 'Смена статуса' 
+                        : log.action;
+
+                      const userName = userNames[String(log.user_id)] || `ID ${log.user_id}`;
+
+                      return (
                       <tr key={index} className="hover:bg-gray-50/80 transition-all">
-                        <td className="p-3 whitespace-nowrap text-gray-400">
-                          {new Date(log.timestamp).toLocaleString()}
-                        </td>
+                        <td className="p-3 whitespace-nowrap text-gray-400 text-[11px]">{timeStr}</td>
                         <td className="p-3 font-mono font-bold text-blue-600">#{log.task_id}</td>
+                        <td className="p-3 text-gray-700 font-medium">{userName}</td>
                         <td className="p-3 font-semibold">
-                          <span className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-md text-[10px]">
-                            {log.action === 'updated' ? 'Обновление' : log.action === 'created' ? 'Создание' : log.action === 'status_changed' ? 'Смена статуса' : log.action}
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] border ${
+                            log.action === 'created' ? 'bg-green-50 text-green-700 border-green-200' 
+                            : log.action === 'updated' ? 'bg-amber-50 text-amber-700 border-amber-200' 
+                            : 'bg-blue-50 text-blue-700 border-blue-200'
+                          }`}>
+                            {actionLabel}
                           </span>
                         </td>
-                        <td className="p-3">
-                          <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md text-[10px] font-mono uppercase">
-                            {log.payload?.status || '—'}
-                          </span>
+                        <td className="p-3 text-gray-600 max-w-xs">
+                          {log.summary ? (
+                            <span className="text-[11px] leading-tight block">{log.summary}</span>
+                          ) : log.changes && log.changes.length > 0 ? (
+                            <ul className="list-disc list-inside text-[11px] space-y-0.5">
+                              {log.changes.map((ch, ci) => <li key={ci}>{ch}</li>)}
+                            </ul>
+                          ) : (
+                            <span className="text-gray-400 italic text-[11px]">—</span>
+                          )}
                         </td>
                       </tr>
-                    ))}
+                    )})}
                   </tbody>
                 </table>
               </div>

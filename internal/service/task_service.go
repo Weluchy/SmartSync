@@ -51,11 +51,18 @@ func (s *TaskService) CreateTask(t *models.Task) (int, error) {
 	if err == nil {
 		s.triggerMathEngine(t.ProjectID)
 
-		// ИСПРАВЛЕНО: Отправляем лог создания
+		// ИСПРАВЛЕНО: Отправляем лог создания с user_id
 		auditMsg, _ := json.Marshal(map[string]interface{}{
 			"task_id": id,
 			"action":  "created",
-			"payload": t,
+			"user_id": t.UserID,
+			"summary": fmt.Sprintf("Создана задача «%s»", t.Title),
+			"payload": map[string]interface{}{
+				"title": t.Title,
+				"opt":   t.Opt,
+				"real":  t.Real,
+				"pess":  t.Pess,
+			},
 		})
 		s.nc.Publish("task.audit", auditMsg)
 	}
@@ -70,15 +77,58 @@ func (s *TaskService) UpdateTask(t *models.Task) error {
 		return err
 	}
 
+	// Получаем старую версию задачи для diff
+	oldTask, oldErr := s.repo.GetByIDInternal(t.ID)
+
 	err = s.repo.UpdateTask(t)
 	if err == nil {
 		s.triggerMathEngine(pid)
 
-		// ИСПРАВЛЕНО: Отправляем лог обновления
+		// Формируем diff изменений
+		changes := []string{}
+		if oldErr == nil {
+			if oldTask.Title != t.Title {
+				changes = append(changes, fmt.Sprintf("название: «%s» → «%s»", oldTask.Title, t.Title))
+			}
+			if oldTask.Opt != t.Opt {
+				changes = append(changes, fmt.Sprintf("оптимистичная оценка: %dч → %dч", oldTask.Opt, t.Opt))
+			}
+			if oldTask.Real != t.Real {
+				changes = append(changes, fmt.Sprintf("реалистичная оценка: %dч → %dч", oldTask.Real, t.Real))
+			}
+			if oldTask.Pess != t.Pess {
+				changes = append(changes, fmt.Sprintf("пессимистичная оценка: %dч → %dч", oldTask.Pess, t.Pess))
+			}
+			if (oldTask.AssigneeID == nil && t.AssigneeID != nil) ||
+				(oldTask.AssigneeID != nil && t.AssigneeID == nil) ||
+				(oldTask.AssigneeID != nil && t.AssigneeID != nil && *oldTask.AssigneeID != *t.AssigneeID) {
+				changes = append(changes, "изменён исполнитель")
+			}
+			if oldTask.Status != t.Status && t.Status != "" {
+				changes = append(changes, fmt.Sprintf("статус: %s → %s", oldTask.Status, t.Status))
+			}
+		}
+
+		summary := fmt.Sprintf("Обновлена задача «%s»", t.Title)
+		if len(changes) > 0 {
+			summary = fmt.Sprintf("Обновлена задача «%s»: %s", t.Title, changes[0])
+			if len(changes) > 1 {
+				summary += fmt.Sprintf(" (+%d изменений)", len(changes)-1)
+			}
+		}
+
 		auditMsg, _ := json.Marshal(map[string]interface{}{
 			"task_id": t.ID,
 			"action":  "updated",
-			"payload": t,
+			"user_id": t.UserID,
+			"summary": summary,
+			"changes": changes,
+			"payload": map[string]interface{}{
+				"title": t.Title,
+				"opt":   t.Opt,
+				"real":  t.Real,
+				"pess":  t.Pess,
+			},
 		})
 		s.nc.Publish("task.audit", auditMsg)
 	}
@@ -175,9 +225,19 @@ func (s *TaskService) UpdateTaskStatus(taskID, userID int, status string) error 
 	if err == nil {
 		s.triggerMathEngine(task.ProjectID)
 
-		// ИСПРАВЛЕНО: Правильный топик (task.audit вместо audit.logs)
-		auditMsg := fmt.Sprintf(`{"task_id": %d, "action": "status_changed", "payload": {"status": "%s"}}`, taskID, status)
-		s.nc.Publish("task.audit", []byte(auditMsg))
+		// ИСПРАВЛЕНО: Отправляем лог с user_id и diff статусов
+		auditMsg, _ := json.Marshal(map[string]interface{}{
+			"task_id": taskID,
+			"action":  "status_changed",
+			"user_id": userID,
+			"summary": fmt.Sprintf("Статус задачи «%s» изменён: %s → %s", task.Title, task.Status, status),
+			"changes": []string{fmt.Sprintf("статус: %s → %s", task.Status, status)},
+			"payload": map[string]interface{}{
+				"old_status": task.Status,
+				"new_status": status,
+			},
+		})
+		s.nc.Publish("task.audit", auditMsg)
 	}
 	return err
 }
