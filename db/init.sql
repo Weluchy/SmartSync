@@ -20,10 +20,12 @@ CREATE TABLE IF NOT EXISTS project_members (
 CREATE TABLE IF NOT EXISTS tasks (
     id SERIAL PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
+    description TEXT DEFAULT '',
     opt INT DEFAULT 0,
     real INT DEFAULT 0,
     pess INT DEFAULT 0,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    assignee_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
     project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
     status VARCHAR(20) DEFAULT 'todo',
     duration_hours DOUBLE PRECISION DEFAULT 0,
@@ -36,6 +38,6 @@ CREATE TABLE IF NOT EXISTS dependencies (
     UNIQUE(task_id, depends_on_id)
 );
 
--- Создаем системного пользователя и дефолтную доску, чтобы фронтенду было куда сохранять задачи
+-- Создаем системного пользователя и дефолтную доску
 INSERT INTO users (id, username, password_hash) VALUES (1000, 'system_admin', 'hash') ON CONFLICT (id) DO NOTHING;
 INSERT INTO projects (id, name, owner_id) VALUES (1, 'Main Kanban Board', 1000) ON CONFLICT (id) DO NOTHING;

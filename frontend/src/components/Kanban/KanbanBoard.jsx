@@ -183,9 +183,9 @@ export default function KanbanBoard({ projectId }) {
           isOpen={isModalOpen} 
           onClose={() => setIsModalOpen(false)} 
           onSave={handleSaveTask} 
-          initialData={editingTask} 
+          task={editingTask} 
           projectId={projectId} 
-        />
+        />  
       </div>
     </div>
   );

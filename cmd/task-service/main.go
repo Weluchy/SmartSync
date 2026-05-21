@@ -34,11 +34,11 @@ func main() {
 
 	db, err = sql.Open("postgres", dbURL)
 	if err != nil {
-		log.Fatal("Ошибка инициализации Postgres:", err)
+		log.Fatal("Ошибка БД: ", err)
 	}
 	defer db.Close()
 
-	// ИССЛЕДОВАНИЕ: Цикл ожидания БД для Task Service
+	// Цикл ожидания БД (чтобы не стрелять в пустоту при запуске Docker)
 	for i := 0; i < 5; i++ {
 		err = db.Ping()
 		if err == nil {
