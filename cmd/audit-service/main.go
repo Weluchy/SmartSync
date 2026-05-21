@@ -87,7 +87,7 @@ func main() {
 				{"task_id": float64(taskID)},
 			},
 		}
-		opts := options.Find().SetSort(bson.D{{"timestamp", -1}})
+		opts := options.Find().SetSort(bson.D{{Key: "timestamp", Value: -1}})
 
 		cursor, err := collection.Find(context.TODO(), filter, opts)
 		if err != nil {
@@ -110,7 +110,7 @@ func main() {
 
 	// Маршрут 2: Общая лента аудита для UserProfile.jsx
 	r.GET("/user/audit", func(c *gin.Context) {
-		opts := options.Find().SetSort(bson.D{{"timestamp", -1}}).SetLimit(30)
+		opts := options.Find().SetSort(bson.D{{Key: "timestamp", Value: -1}}).SetLimit(30)
 		cursor, err := collection.Find(context.TODO(), bson.M{}, opts)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка БД"})

@@ -20,14 +20,14 @@ CREATE TABLE IF NOT EXISTS project_members (
 CREATE TABLE IF NOT EXISTS tasks (
     id SERIAL PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
-    opt FLOAT,
-    real FLOAT,
-    pess FLOAT,
+    opt INT DEFAULT 0,
+    real INT DEFAULT 0,
+    pess INT DEFAULT 0,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
     project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
     status VARCHAR(20) DEFAULT 'todo',
-    duration_hours FLOAT,
-    priority_score FLOAT
+    duration_hours DOUBLE PRECISION DEFAULT 0,
+    priority_score DOUBLE PRECISION DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS dependencies (
@@ -35,12 +35,3 @@ CREATE TABLE IF NOT EXISTS dependencies (
     depends_on_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
     UNIQUE(task_id, depends_on_id)
 );
-
-ALTER TABLE tasks 
-    ADD COLUMN opt INT DEFAULT 0,
-    ADD COLUMN real INT DEFAULT 0,
-    ADD COLUMN pess INT DEFAULT 0,
-    ADD COLUMN duration_hours DOUBLE PRECISION DEFAULT 0,
-    ADD COLUMN priority_score DOUBLE PRECISION DEFAULT 0,
-    ADD COLUMN user_id INT REFERENCES users(id);
-
