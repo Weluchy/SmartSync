@@ -42,6 +42,14 @@ func (s *TaskService) CreateTask(t *models.Task) (int, error) {
 	id, err := s.repo.CreateTask(t)
 	if err == nil {
 		s.triggerMathEngine(t.ProjectID)
+
+		// ИСПРАВЛЕНО: Отправляем лог создания
+		auditMsg, _ := json.Marshal(map[string]interface{}{
+			"task_id": id,
+			"action":  "created",
+			"payload": t,
+		})
+		s.nc.Publish("task.audit", auditMsg)
 	}
 	return id, err
 }
@@ -49,7 +57,6 @@ func (s *TaskService) CreateTask(t *models.Task) (int, error) {
 func (s *TaskService) UpdateTask(t *models.Task) error {
 	pid, _ := s.repo.GetProjectIDByTask(t.ID)
 
-	// Исследование: Чтобы менять Текст или Время задачи, ты должен быть хотя бы Редактором
 	_, err := s.repo.CheckAccess(pid, t.UserID, models.RoleWeights[models.RoleEditor])
 	if err != nil {
 		return err
@@ -58,6 +65,14 @@ func (s *TaskService) UpdateTask(t *models.Task) error {
 	err = s.repo.UpdateTask(t)
 	if err == nil {
 		s.triggerMathEngine(pid)
+
+		// ИСПРАВЛЕНО: Отправляем лог обновления
+		auditMsg, _ := json.Marshal(map[string]interface{}{
+			"task_id": t.ID,
+			"action":  "updated",
+			"payload": t,
+		})
+		s.nc.Publish("task.audit", auditMsg)
 	}
 	return err
 }
@@ -116,15 +131,11 @@ func (s *TaskService) UpdateTaskStatus(taskID, userID int, status string) error 
 		return fmt.Errorf("задача не найдена")
 	}
 
-	// Проверяем базовый доступ
 	role, err := s.repo.CheckAccess(task.ProjectID, userID, models.RoleWeights[models.RoleViewer])
 	if err != nil {
 		return err
 	}
 
-	// ГРАНУЛЯРНАЯ ЛОГИКА (Для диплома):
-	// Статус меняет либо Тот, кому поручили (Assignee),
-	// либо Менеджер проекта (Admin и выше)
 	isAssignee := task.AssigneeID != nil && *task.AssigneeID == userID
 	isManager := models.RoleWeights[role] >= models.RoleWeights[models.RoleAdmin]
 
@@ -135,8 +146,10 @@ func (s *TaskService) UpdateTaskStatus(taskID, userID int, status string) error 
 	err = s.repo.UpdateTaskStatus(taskID, status)
 	if err == nil {
 		s.triggerMathEngine(task.ProjectID)
-		auditMsg := fmt.Sprintf(`{"task_id": %d, "user_id": %d, "action": "STATUS_CHANGED", "new_status": "%s"}`, taskID, userID, status)
-		s.nc.Publish("audit.logs", []byte(auditMsg))
+
+		// ИСПРАВЛЕНО: Правильный топик (task.audit вместо audit.logs)
+		auditMsg := fmt.Sprintf(`{"task_id": %d, "action": "status_changed", "payload": {"status": "%s"}}`, taskID, status)
+		s.nc.Publish("task.audit", []byte(auditMsg))
 	}
 	return err
 }
@@ -170,7 +183,6 @@ func (s *TaskService) GetTasksByProject(projectID, userID int) ([]models.Task, e
 
 	for i := range tasks {
 		uid := fmt.Sprintf("%d", tasks[i].UserID)
-		// ИСПРАВЛЕНИЕ: Проверяем val != ""
 		if val, ok := names[uid]; ok && val != "" {
 			tasks[i].CreatedByName = val
 		} else {

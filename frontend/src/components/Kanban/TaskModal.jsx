@@ -12,8 +12,6 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
     status: 'todo'
   });
   const [members, setMembers] = useState([]);
-  
-  // Добавляем состояние для хранения логов (истории)
   const [logs, setLogs] = useState([]);
 
   useEffect(() => {
@@ -23,8 +21,6 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
     
     if (initialData) {
       setFormData({ ...initialData, assignee_id: initialData.assignee_id || '' });
-      
-      // ИССЛЕДОВАНИЕ: Загружаем логи только если мы открыли существующую задачу
       if (initialData.id) {
         api.get(`/logs/${initialData.id}`)
           .then(res => setLogs(res.data || []))
@@ -32,7 +28,7 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
       }
     } else {
       setFormData({ title: '', opt: 1, real: 2, pess: 3, status: 'todo', assignee_id: '' });
-      setLogs([]); // Очищаем логи при создании новой задачи
+      setLogs([]); 
     }
   }, [initialData, isOpen, projectId]); 
 
@@ -42,11 +38,12 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
     e.preventDefault();
     onSave({
       ...formData,
-      assignee_id: formData.assignee_id ? parseInt(formData.assignee_id) : null,
-      opt: parseFloat(formData.opt),
-      real: parseFloat(formData.real),
-      pess: parseFloat(formData.pess),
-      project_id: parseInt(projectId, 10) // <-- ИСПРАВЛЕНО: Явно делаем числом
+      // ИСПРАВЛЕНО: Строго переводим всё в Int, чтобы Go не ругался (400 Bad Request)
+      assignee_id: formData.assignee_id ? parseInt(formData.assignee_id, 10) : null,
+      opt: parseInt(formData.opt, 10) || 0,
+      real: parseInt(formData.real, 10) || 0,
+      pess: parseInt(formData.pess, 10) || 0,
+      project_id: parseInt(projectId, 10) 
     });
   };
 
@@ -75,36 +72,27 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
 
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-[10px] font-black text-green-600 uppercase mb-1">Оптим.</label>
+              <label className="block text-[10px] font-black text-green-600 uppercase mb-1">Оптим. (ч)</label>
               <input
-                type="number"
-                min="0"
-                step="0.1"
-                required
+                type="number" min="0" step="1" required
                 className="w-full border rounded-lg p-2 bg-gray-50"
                 value={formData.opt}
                 onChange={e => setFormData({...formData, opt: e.target.value})}
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-blue-600 uppercase mb-1">Реал.</label>
+              <label className="block text-[10px] font-black text-blue-600 uppercase mb-1">Реал. (ч)</label>
               <input
-                type="number"
-                min="0"
-                step="0.1"
-                required
+                type="number" min="0" step="1" required
                 className="w-full border rounded-lg p-2 bg-gray-50"
                 value={formData.real}
                 onChange={e => setFormData({...formData, real: e.target.value})}
               />
             </div>
             <div>
-              <label className="block text-[10px] font-black text-red-600 uppercase mb-1">Пессим.</label>
+              <label className="block text-[10px] font-black text-red-600 uppercase mb-1">Пессим. (ч)</label>
               <input
-                type="number"
-                min="0"
-                step="0.1"
-                required
+                type="number" min="0" step="1" required
                 className="w-full border rounded-lg p-2 bg-gray-50"
                 value={formData.pess}
                 onChange={e => setFormData({...formData, pess: e.target.value})}
@@ -126,7 +114,6 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
             </select>
           </div>
 
-          {/* ИССЛЕДОВАНИЕ: Блок с логами. Показываем только при редактировании (initialData) */}
           {initialData && (
             <div className="pt-4 border-t mt-4">
               <h4 className="font-bold text-sm text-gray-700 mb-2">История (Аудит)</h4>
@@ -136,13 +123,13 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
                     {logs.map((log, i) => (
                       <li key={i} className="border-b border-gray-200 pb-2 last:border-0">
                         <div className="flex justify-between font-medium text-blue-700">
-                          <span>{log.action === 'updated' ? 'Обновление' : 'Создание'}</span>
+                          <span>{log.action === 'updated' ? 'Обновление' : log.action === 'created' ? 'Создание' : 'Изменение статуса'}</span>
                           <span className="text-gray-400 font-normal">
                             {new Date(log.timestamp).toLocaleString('ru-RU')}
                           </span>
                         </div>
                         {log.payload && log.payload.status && (
-                          <p className="text-gray-600 mt-0.5">Новый статус: <span className="font-semibold">{log.payload.status}</span></p>
+                          <p className="text-gray-600 mt-0.5">Статус: <span className="font-semibold">{log.payload.status}</span></p>
                         )}
                       </li>
                     ))}
