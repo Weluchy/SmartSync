@@ -1,16 +1,79 @@
 /* index.css */
 @import "tailwindcss";
 
-/* ПРИКАЗ: Фиксируем высоту на всех уровнях */
+/* Светлая тема (по умолчанию) */
+:root {
+  --bg-page: #f9fafb;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f3f4f6;
+  --bg-sidebar: #ffffff;
+  --bg-input: #f9fafb;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --text-muted: #9ca3af;
+  --border: #e5e7eb;
+  --border-hover: #d1d5db;
+  --kanban-bg: #f3f4f6;
+  --shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+/* Тёмная тема */
+.dark {
+  --bg-page: #0f0f0f;
+  --bg-card: #1a1a2e;
+  --bg-card-hover: #252540;
+  --bg-sidebar: #111125;
+  --bg-input: #1a1a2e;
+  --text-primary: #e4e4e7;
+  --text-secondary: #a1a1aa;
+  --text-muted: #71717a;
+  --border: #27272a;
+  --border-hover: #3f3f46;
+  --kanban-bg: #18181b;
+  --shadow: 0 1px 3px rgba(0,0,0,0.4);
+}
+
 html, body, #root {
   height: 100%;
   margin: 0;
   padding: 0;
-  overflow: hidden; /* Весь экран не скроллится, только контент внутри */
+  overflow: hidden;
 }
 
 body {
-  background-color: #f9fafb;
-  color: #111827;
+  background-color: var(--bg-page);
+  color: var(--text-primary);
   font-family: ui-sans-serif, system-ui, sans-serif;
+  transition: background-color 0.3s, color 0.3s;
+}
+
+/* Скроллбар для тёмной темы */
+.dark ::-webkit-scrollbar {
+  width: 6px;
+}
+.dark ::-webkit-scrollbar-track {
+  background: #18181b;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 3px;
+}
+
+/* Анимация drag & drop */
+.dragging {
+  opacity: 0.5;
+  transform: scale(0.95);
+  transition: all 0.2s;
+}
+
+/* Тень при наведении для карточек */
+.task-card {
+  transition: all 0.15s ease-in-out;
+}
+.task-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+.dark .task-card:hover {
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }

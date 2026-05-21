@@ -1,0 +1,10 @@
+# Автоматическая загрузка дашбордов
+apiVersion: 1
+
+providers:
+  - name: 'SmartSync'
+    type: file
+    disableDeletion: true
+    editable: true
+    options:
+      path: /etc/grafana/provisioning/dashboards

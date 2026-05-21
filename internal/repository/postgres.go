@@ -13,6 +13,13 @@ type TaskRepository struct {
 func NewTaskRepository(db *sql.DB) *TaskRepository {
 	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'todo'`)
 	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignee_id INT REFERENCES users(id) ON DELETE SET NULL`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS comments (
+		id SERIAL PRIMARY KEY,
+		task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+		user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+		text TEXT NOT NULL,
+		created_at TIMESTAMP DEFAULT NOW()
+	)`)
 	return &TaskRepository{db: db}
 }
 
@@ -201,4 +208,31 @@ func (r *TaskRepository) GetByID(id, userID int) (*models.Task, error) {
 	err := r.db.QueryRow("SELECT id, project_id, status, title FROM tasks WHERE id = $1 AND user_id = $2", id, userID).
 		Scan(&t.ID, &t.ProjectID, &t.Status, &t.Title)
 	return &t, err
+}
+
+func (r *TaskRepository) AddComment(taskID, userID int, text string) (*models.Comment, error) {
+	var c models.Comment
+	err := r.db.QueryRow(`
+		INSERT INTO comments (task_id, user_id, text) 
+		VALUES ($1, $2, $3) RETURNING id, task_id, user_id, text, created_at`,
+		taskID, userID, text).Scan(&c.ID, &c.TaskID, &c.UserID, &c.Text, &c.CreatedAt)
+	return &c, err
+}
+
+func (r *TaskRepository) GetComments(taskID int) ([]models.Comment, error) {
+	rows, err := r.db.Query(`
+		SELECT c.id, c.task_id, c.user_id, u.username, c.text, c.created_at 
+		FROM comments c JOIN users u ON c.user_id = u.id 
+		WHERE c.task_id = $1 ORDER BY c.created_at ASC`, taskID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var comments []models.Comment
+	for rows.Next() {
+		var c models.Comment
+		rows.Scan(&c.ID, &c.TaskID, &c.UserID, &c.Username, &c.Text, &c.CreatedAt)
+		comments = append(comments, c)
+	}
+	return comments, nil
 }

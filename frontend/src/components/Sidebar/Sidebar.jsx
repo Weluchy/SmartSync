@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'; // ИСПРАВЛЕНО: добавлены хуки
 import PropTypes from 'prop-types';
-import { Plus, Users, Send, Settings2 } from 'lucide-react'; 
+import { Plus, Users, Send, Settings2, Moon, Sun } from 'lucide-react'; 
 import { api } from '../../api/client';
+import { useTheme } from '../../ThemeContext';
 
 export default function Sidebar({ projects, currentProjectId, onSelectProject, onCreateProject, invitations = [] }) {
+  const { isDark, toggleTheme } = useTheme();
   const [inviteUser, setInviteUser] = useState('');
   const [members, setMembers] = useState([]);
   const [selectedRole, setSelectedRole] = useState('viewer');
@@ -53,8 +55,11 @@ const changeRole = async (userId, newRole) => {
 
   return (
     <aside className="w-72 bg-white border-r border-gray-200 flex flex-col shadow-sm">
-      <div className="p-6 border-b border-gray-100">
+      <div className="p-6 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
         <h2 className="text-xl font-black text-blue-600 tracking-tight italic">SmartSync.engine</h2>
+        <button onClick={toggleTheme} className="p-2 rounded-lg transition-colors" style={{ color: 'var(--text-secondary)' }} title={isDark ? 'Светлая тема' : 'Тёмная тема'}>
+          {isDark ? <Sun size={16} /> : <Moon size={16} />}
+        </button>
       </div>
 
       <div className="flex-1 overflow-y-auto p-4 space-y-1">

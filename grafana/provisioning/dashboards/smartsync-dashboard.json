@@ -1,0 +1,160 @@
+{
+  "title": "SmartSync - Исследование микросервисной архитектуры",
+  "uid": "smartsync_diploma",
+  "version": 2,
+  "timezone": "browser",
+  "schemaVersion": 36,
+  "panels": [
+    {
+      "title": "Запросы к Task Service (req/s)",
+      "type": "graph",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "targets": [
+        {
+          "expr": "rate(smartsync_requests_total[1m])",
+          "legendFormat": "{{method}} {{endpoint}}",
+          "refId": "requests"
+        }
+      ]
+    },
+    {
+      "title": "P95 latency запросов (сек)",
+      "type": "graph",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(smartsync_request_duration_seconds_bucket[1m])) by (le, endpoint, method))",
+          "legendFormat": "{{method}} {{endpoint}}",
+          "refId": "latency_p95"
+        }
+      ]
+    },
+    {
+      "title": "Среднее время ответа (сек)",
+      "type": "graph",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+      "targets": [
+        {
+          "expr": "rate(smartsync_request_duration_seconds_sum[1m]) / rate(smartsync_request_duration_seconds_count[1m]) > 0",
+          "legendFormat": "{{endpoint}}",
+          "refId": "avg_latency"
+        }
+      ]
+    },
+    {
+      "title": "Количество ошибок (в минуту)",
+      "type": "graph",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+      "targets": [
+        {
+          "expr": "rate(smartsync_errors_total[1m])",
+          "legendFormat": "{{method}} {{endpoint}} ({{status}})",
+          "refId": "errors"
+        }
+      ]
+    },
+    {
+      "title": "Активные WebSocket соединения",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 8, "x": 0, "y": 16 },
+      "targets": [
+        {
+          "expr": "smartsync_websocket_active",
+          "legendFormat": "WS",
+          "refId": "ws_active"
+        }
+      ]
+    },
+    {
+      "title": "Go: Goroutines",
+      "type": "graph",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 16 },
+      "targets": [
+        {
+          "expr": "go_goroutines",
+          "legendFormat": "goroutines",
+          "refId": "goroutines"
+        }
+      ]
+    },
+    {
+      "title": "Go: Потребление памяти (MB)",
+      "type": "graph",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 16 },
+      "targets": [
+        {
+          "expr": "go_memstats_alloc_bytes / 1024 / 1024",
+          "legendFormat": "Alloc",
+          "refId": "mem_alloc"
+        },
+        {
+          "expr": "go_memstats_sys_bytes / 1024 / 1024",
+          "legendFormat": "Sys",
+          "refId": "mem_sys"
+        }
+      ]
+    },
+    {
+      "title": "Go: Сборка мусора (GC)",
+      "type": "graph",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 22 },
+      "targets": [
+        {
+          "expr": "rate(go_gc_duration_seconds_sum[1m])",
+          "legendFormat": "GC duration",
+          "refId": "gc"
+        }
+      ]
+    },
+    {
+      "title": "Go: Операции с памятью (rate)",
+      "type": "graph",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 22 },
+      "targets": [
+        {
+          "expr": "rate(go_memstats_lookups_total[1m])",
+          "legendFormat": "pointer derefs/s",
+          "refId": "lookups"
+        },
+        {
+          "expr": "rate(go_memstats_mallocs_total[1m])",
+          "legendFormat": "mallocs/s",
+          "refId": "mallocs"
+        },
+        {
+          "expr": "rate(go_memstats_frees_total[1m])",
+          "legendFormat": "frees/s",
+          "refId": "frees"
+        }
+      ]
+    },
+    {
+      "title": "Go: Heap (куча)",
+      "type": "graph",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 22 },
+      "targets": [
+        {
+          "expr": "go_memstats_heap_alloc_bytes / 1024 / 1024",
+          "legendFormat": "Heap alloc MB",
+          "refId": "heap_alloc"
+        },
+        {
+          "expr": "go_memstats_heap_inuse_bytes / 1024 / 1024",
+          "legendFormat": "Heap inuse MB",
+          "refId": "heap_inuse"
+        }
+      ]
+    }
+  ],
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "Prometheus",
+        "enable": true,
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true
+}

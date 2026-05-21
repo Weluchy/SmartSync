@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { api } from '../../api/client';
-import { Plus, Trash2, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, Search, Filter } from 'lucide-react';
 import TaskModal from './TaskModal';
 
 const COLUMNS = [
@@ -14,12 +14,24 @@ export default function KanbanBoard({ projectId }) {
   const [tasks, setTasks] = useState([]);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTask, setEditingTask] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterAssignee, setFilterAssignee] = useState('all');
+  const [members, setMembers] = useState([]); // Ошибка линтера уйдет, мы их используем!
 
   const loadTasks = useCallback(async () => {
     if (!projectId) return;
     try {
       const data = await api.get(`/projects/${projectId}/tasks`);
       setTasks(data || []);
+    } catch (err) { console.error(err); }
+  }, [projectId]);
+
+  const loadMembers = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const data = await api.get(`/projects/${projectId}/members`);
+      setMembers(data || []);
     } catch (err) { console.error(err); }
   }, [projectId]);
 
@@ -53,123 +65,136 @@ export default function KanbanBoard({ projectId }) {
   };
 
   useEffect(() => {
-    loadTasks(); // Первичная загрузка
+    loadTasks();
+    loadMembers();
 
     const ws = new WebSocket('ws://localhost:8000/ws');
-
     ws.onopen = () => console.log('✅ WebSocket подключен к API Gateway');
-
     ws.onmessage = (event) => {
-      // ДЕБАГ: Выводим всё, что прилетает от сервера
-      console.log('📥 Получено сообщение по WS:', event.data); 
-      
       try {
         const data = JSON.parse(event.data);
         if (data.project_id === Number(projectId)) {
-          console.log('🔄 Коллега изменил проект! Мгновенно обновляем доску...');
           loadTasks();
         }
-      } catch (e) {
-        console.error('Ошибка обработки WS-сообщения', e);
-      }
+      } catch (e) { console.error('Ошибка обработки WS-сообщения', e); }
     };
-
     ws.onclose = () => console.log('❌ WebSocket отключен');
+    return () => { if (ws.readyState === 1) ws.close(); };
+  }, [loadTasks, loadMembers, projectId]);
 
-    return () => {
-      // ИСПРАВЛЕНИЕ ОШИБКИ REACT STRICT MODE: 
-      // Закрываем сокет только если он успел полностью открыться
-      if (ws.readyState === 1) { 
-        ws.close();
-      }
-    };
-  }, [loadTasks, projectId]);
+  // Умная фильтрация задач
+  const filteredTasks = tasks.filter(t => {
+    if (searchQuery && !t.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
+    if (filterStatus !== 'all' && t.status !== filterStatus) return false;
+    
+    if (filterAssignee === 'unassigned' && t.assignee_id) return false;
+    if (filterAssignee === 'assigned' && !t.assignee_id) return false;
+    if (filterAssignee === 'me' && t.assignee_id !== Number(localStorage.getItem('userId'))) return false;
+    
+    // Фильтр по конкретному человеку из members
+    if (filterAssignee !== 'all' && filterAssignee !== 'me' && filterAssignee !== 'assigned' && filterAssignee !== 'unassigned') {
+      if (t.assignee_id !== Number(filterAssignee)) return false;
+    }
+    return true;
+  });
 
-  const maxScore = tasks.length > 0 ? Math.max(...tasks.map(t => t.priority_score || 0)) : 0;
+  const maxScore = filteredTasks.length > 0 ? Math.max(...filteredTasks.map(t => t.priority_score || 0)) : 0;
 
   return (
-    <div className="h-full w-full bg-gray-50 p-6 overflow-hidden">
-      <div className="w-full h-full flex flex-col bg-white rounded-2xl shadow-xl border overflow-hidden transition-all">
+    <div className="h-full w-full p-6 overflow-hidden" style={{ backgroundColor: 'var(--bg-page)' }}>
+      <div className="w-full h-full flex flex-col rounded-2xl shadow-xl border overflow-hidden transition-all" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
         
-        <div className="h-[72px] min-h-[72px] px-8 border-b flex justify-between items-center bg-white z-10">
-          <div>
-            <h3 className="font-bold text-gray-700 uppercase text-xs tracking-widest">Канбан-доска</h3>
-            <p className="text-[10px] text-gray-400">Управляйте задачами и их статусами</p>
+        <div className="h-[72px] min-h-[72px] px-8 border-b flex items-center gap-4" style={{ borderColor: 'var(--border)' }}>
+          <div className="flex items-center gap-2 flex-1">
+            <Search size={14} style={{ color: 'var(--text-muted)' }} />
+            <input
+              placeholder="Поиск задач..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="flex-1 bg-transparent text-sm outline-none"
+              style={{ color: 'var(--text-primary)' }}
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <Filter size={14} style={{ color: 'var(--text-muted)' }} />
+            <select
+              value={filterStatus}
+              onChange={e => setFilterStatus(e.target.value)}
+              className="text-xs border rounded-lg p-1.5 outline-none"
+              style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-secondary)', borderColor: 'var(--border)' }}
+            >
+              <option value="all">Все статусы</option>
+              <option value="todo">Бэклог</option>
+              <option value="in_progress">В работе</option>
+              <option value="done">Готово</option>
+            </select>
+            <select
+              value={filterAssignee}
+              onChange={e => setFilterAssignee(e.target.value)}
+              className="text-xs border rounded-lg p-1.5 outline-none"
+              style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-secondary)', borderColor: 'var(--border)' }}
+            >
+              <option value="all">Все задачи</option>
+              <option value="me">Мои задачи</option>
+              <option value="assigned">Назначенные</option>
+              <option value="unassigned">Не назначены</option>
+              {members.length > 0 && (
+                <optgroup label="Пользователи">
+                  {members.map(m => (
+                    <option key={m.user_id} value={m.user_id}>{m.username}</option>
+                  ))}
+                </optgroup>
+              )}
+            </select>
           </div>
           <button 
             onClick={() => { setEditingTask(null); setIsModalOpen(true); }}
-            className="bg-blue-600 text-white px-6 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-blue-700 transition-all shadow-md"
+            className="bg-blue-600 text-white px-5 py-2 rounded-xl text-xs font-bold flex items-center gap-2 hover:bg-blue-700 transition-all shadow-md"
           >
-            <Plus size={16} /> СОЗДАТЬ ЗАДАЧУ
+            <Plus size={16} /> СОЗДАТЬ
           </button>
         </div>
 
-        <div className="flex-1 overflow-x-auto p-8">
-          <div className="flex gap-8 h-full">
+        <div className="flex-1 overflow-x-auto p-6">
+          <div className="flex gap-6 h-full">
             {COLUMNS.map(col => (
               <div key={col.id} className="flex-shrink-0 w-80 flex flex-col h-full">
-                <h3 className="font-bold text-gray-500 uppercase text-[10px] tracking-widest mb-4 px-2">
-                  {col.title} · {tasks.filter(t => t.status === col.id).length}
+                <h3 className="font-bold text-xs uppercase tracking-widest mb-3 px-2" style={{ color: 'var(--text-secondary)' }}>
+                  {col.title} · {filteredTasks.filter(t => t.status === col.id).length}
                 </h3>
                 <div 
                   onDragOver={e => e.preventDefault()}
                   onDrop={e => updateTaskStatus(e.dataTransfer.getData('taskId'), col.id)}
-                  className={`flex-1 rounded-2xl p-3 space-y-4 border-2 border-dashed border-transparent ${col.color} overflow-y-auto`}
+                  className="flex-1 rounded-2xl p-3 space-y-3 border-2 border-dashed border-transparent overflow-y-auto"
+                  style={{ backgroundColor: col.color === 'bg-gray-100' ? 'var(--kanban-bg)' : col.color === 'bg-blue-50' ? 'rgba(59,130,246,0.05)' : 'rgba(34,197,94,0.05)' }}
                 >
-                  {tasks.filter(t => t.status === col.id).map(task => {
+                  {filteredTasks.filter(t => t.status === col.id).map(task => {
                     const isCritical = task.priority_score >= (maxScore * 0.8) && task.priority_score > 0 && task.status !== 'done';
-                    
                     return (
                       <div 
-                        key={task.id}
-                        draggable
-                        onDragStart={e => e.dataTransfer.setData('taskId', task.id)}
+                        key={task.id} draggable onDragStart={e => e.dataTransfer.setData('taskId', task.id)}
                         onClick={() => { setEditingTask(task); setIsModalOpen(true); }}
-                        className={`bg-white p-5 rounded-2xl shadow-sm border-2 transition-all hover:shadow-lg group cursor-pointer ${
-                          isCritical ? 'border-red-200 bg-red-50/30' : 'border-transparent hover:border-gray-200'
-                        }`}
+                        className="task-card bg-white p-4 rounded-2xl shadow-sm border-2 transition-all cursor-pointer group"
+                        style={{ borderColor: isCritical ? '#fecaca' : 'var(--border)' }}
                       >
                         <div className="flex justify-between items-start">
-                          <span className={`text-[10px] font-black uppercase ${isCritical ? 'text-red-500' : 'text-blue-500'}`}>
-                            ID-{task.id}
-                          </span>
-                          <button 
-                            onClick={e => deleteTask(e, task.id)} 
-                            className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-500 transition-opacity"
-                          >
-                            <Trash2 size={14} />
-                          </button>
+                          <span className={`text-[10px] font-black uppercase ${isCritical ? 'text-red-500' : ''}`} style={{ color: isCritical ? '' : 'var(--text-muted)' }}>ID-{task.id}</span>
+                          <button onClick={e => deleteTask(e, task.id)} className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: 'var(--text-muted)' }}><Trash2 size={14} /></button>
                         </div>
-                        <h4 className="text-sm font-bold text-gray-800 mt-2">{task.title}</h4>
-
+                        <h4 className="text-sm font-bold mt-2" style={{ color: 'var(--text-primary)' }}>{task.title}</h4>
                         <div className="flex items-center gap-2 mt-2">
-                          <div className="w-4 h-4 bg-blue-500 rounded-full flex items-center justify-center text-[8px] text-white">
+                          <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center text-[8px] text-white font-bold">
                             {task.created_by_name?.charAt(0) || '?'}
                           </div>
-                          <span className="text-[10px] text-gray-400">
-                            {task.created_by_name || 'Загрузка...'}
-                          </span>
+                          <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{task.created_by_name || 'Загрузка...'}</span>
                         </div>
-
                         {task.assignee_id ? (
-                           <p className="text-[10px] text-gray-500 mt-2 font-medium bg-gray-100 p-1.5 rounded w-fit">
-                              Исп: <span className="font-bold text-gray-700">{task.assignee_name}</span>
-                           </p>
+                          <p className="text-[10px] font-medium mt-2 p-1.5 rounded w-fit" style={{ backgroundColor: 'var(--bg-card-hover)', color: 'var(--text-secondary)' }}>
+                            Исп: <span className="font-bold">{task.assignee_name}</span>
+                          </p>
                         ) : (
-                           <p className="text-[10px] text-gray-400 mt-2 font-medium italic">Не назначен</p>
+                          <p className="text-[10px] mt-2 italic" style={{ color: 'var(--text-muted)' }}>Не назначен</p>
                         )}
-                        
-                        {isCritical && (
-                          <div className="flex items-center gap-1 text-[9px] text-red-600 font-bold mt-3 bg-red-100 w-fit px-2.5 py-1 rounded-full">
-                            <AlertCircle size={10} /> КРИТИЧЕСКИЙ ВЕС
-                          </div>
-                        )}
-
-                        <div className="mt-4 pt-4 border-t border-gray-50 flex items-center justify-between">
-                          <div className="text-[10px] bg-gray-100 text-gray-600 px-2.5 py-1.5 rounded-lg font-black">
-                            {task.priority_score.toFixed(1)}ч
-                          </div>
-                        </div>
                       </div>
                     );
                   })}
@@ -179,18 +204,10 @@ export default function KanbanBoard({ projectId }) {
           </div>
         </div>
 
-        <TaskModal 
-          isOpen={isModalOpen} 
-          onClose={() => setIsModalOpen(false)} 
-          onSave={handleSaveTask} 
-          initialData={editingTask} 
-          projectId={projectId} 
-        />  
+        <TaskModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSaveTask} initialData={editingTask} projectId={projectId} />  
       </div>
     </div>
   );
 }
 
-KanbanBoard.propTypes = {
-  projectId: PropTypes.oneOfType([PropTypes.number, PropTypes.string])
-};
+KanbanBoard.propTypes = { projectId: PropTypes.oneOfType([PropTypes.number, PropTypes.string]) };

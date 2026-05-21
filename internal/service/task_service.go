@@ -331,3 +331,18 @@ func (s *TaskService) GetDependenciesByProject(projectID int) ([]models.Dependen
 func (s *TaskService) GetTaskByID(id, userID int) (*models.Task, error) {
 	return s.repo.GetByID(id, userID)
 }
+
+func (s *TaskService) AddComment(taskID, userID int, text string) (*models.Comment, error) {
+	pid, err := s.repo.GetProjectIDByTask(taskID)
+	if err != nil {
+		return nil, fmt.Errorf("задача не найдена")
+	}
+	if _, err := s.repo.CheckAccess(pid, userID, models.RoleWeights[models.RoleViewer]); err != nil {
+		return nil, err
+	}
+	return s.repo.AddComment(taskID, userID, text)
+}
+
+func (s *TaskService) GetComments(taskID int) ([]models.Comment, error) {
+	return s.repo.GetComments(taskID)
+}

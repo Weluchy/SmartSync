@@ -38,6 +38,15 @@ CREATE TABLE IF NOT EXISTS dependencies (
     UNIQUE(task_id, depends_on_id)
 );
 
+-- Таблица комментариев для задач (Связь с tasks и users)
+CREATE TABLE IF NOT EXISTS comments (
+    id SERIAL PRIMARY KEY,
+    task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
+    user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    text TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Создаем системного пользователя и дефолтную доску
 INSERT INTO users (id, username, password_hash) VALUES (1000, 'system_admin', 'hash') ON CONFLICT (id) DO NOTHING;
 INSERT INTO projects (id, name, owner_id) VALUES (1, 'Main Kanban Board', 1000) ON CONFLICT (id) DO NOTHING;
