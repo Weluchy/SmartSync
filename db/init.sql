@@ -35,3 +35,7 @@ CREATE TABLE IF NOT EXISTS dependencies (
     depends_on_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
     UNIQUE(task_id, depends_on_id)
 );
+
+-- Создаем системного пользователя и дефолтную доску, чтобы фронтенду было куда сохранять задачи
+INSERT INTO users (id, username, password_hash) VALUES (1000, 'system_admin', 'hash') ON CONFLICT (id) DO NOTHING;
+INSERT INTO projects (id, name, owner_id) VALUES (1, 'Main Kanban Board', 1000) ON CONFLICT (id) DO NOTHING;
