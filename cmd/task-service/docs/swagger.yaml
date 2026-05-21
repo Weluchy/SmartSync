@@ -1,0 +1,413 @@
+definitions:
+  smartsync_internal_models.Task:
+    properties:
+      assignee_id:
+        description: Указатель, т.к. может быть NULL
+        type: integer
+      assignee_name:
+        description: Имя для фронтенда
+        type: string
+      created_at:
+        type: string
+      created_by_name:
+        type: string
+      duration_hours:
+        type: number
+      id:
+        type: integer
+      opt:
+        type: integer
+      pess:
+        type: integer
+      priority_score:
+        type: number
+      project_id:
+        type: integer
+      real:
+        type: integer
+      status:
+        type: string
+      title:
+        type: string
+      user_id:
+        type: integer
+    type: object
+info:
+  contact: {}
+paths:
+  /projects/{project_id}/graph:
+    get:
+      consumes:
+      - application/json
+      description: |-
+        Возвращает список задач с именами авторов
+        Меняет статус (todo → in_progress → done). Только исполнитель или admin+
+        Возвращает все задачи и связи
+      parameters:
+      - description: ID проекта
+        in: path
+        name: project_id
+        required: true
+        type: integer
+      - description: ID задачи
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: '{ \'
+        in: body
+        name: status
+        required: true
+        schema:
+          type: object
+      - description: ID проекта
+        in: path
+        name: project_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      - application/json
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      - bearerAuth: []
+      - bearerAuth: []
+      summary: Граф зависимостей проекта
+      tags:
+      - Projects
+      - Tasks
+      - Projects
+  /projects/{project_id}/tasks:
+    get:
+      consumes:
+      - application/json
+      description: |-
+        Возвращает список задач с именами авторов
+        Меняет статус (todo → in_progress → done). Только исполнитель или admin+
+        Возвращает все задачи и связи
+      parameters:
+      - description: ID проекта
+        in: path
+        name: project_id
+        required: true
+        type: integer
+      - description: ID задачи
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: '{ \'
+        in: body
+        name: status
+        required: true
+        schema:
+          type: object
+      - description: ID проекта
+        in: path
+        name: project_id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      - application/json
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      - bearerAuth: []
+      - bearerAuth: []
+      summary: Граф зависимостей проекта
+      tags:
+      - Projects
+      - Tasks
+      - Projects
+  /tasks:
+    post:
+      consumes:
+      - application/json
+      description: Создаёт новую задачу в проекте
+      parameters:
+      - description: Данные задачи
+        in: body
+        name: task
+        required: true
+        schema:
+          $ref: '#/definitions/smartsync_internal_models.Task'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/smartsync_internal_models.Task'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      summary: Создать задачу
+      tags:
+      - Tasks
+  /tasks/{id}:
+    delete:
+      description: Удаляет задачу. Требует роль admin+
+      parameters:
+      - description: ID задачи
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Перестроить граф
+        in: query
+        name: heal
+        type: boolean
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      summary: Удалить задачу
+      tags:
+      - Tasks
+    put:
+      consumes:
+      - application/json
+      description: Изменяет название, оценки (opt/real/pess) или исполнителя задачи
+      parameters:
+      - description: ID задачи
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Новые данные
+        in: body
+        name: task
+        required: true
+        schema:
+          $ref: '#/definitions/smartsync_internal_models.Task'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      summary: Обновить задачу
+      tags:
+      - Tasks
+  /tasks/{id}/dependencies:
+    post:
+      consumes:
+      - application/json
+      description: 'Создаёт связь: task_id зависит от depends_on_id'
+      parameters:
+      - description: ID задачи
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: '{ \'
+        in: body
+        name: dep
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      summary: Создать зависимость
+      tags:
+      - Dependencies
+  /tasks/{id}/status:
+    patch:
+      consumes:
+      - application/json
+      description: |-
+        Возвращает список задач с именами авторов
+        Меняет статус (todo → in_progress → done). Только исполнитель или admin+
+        Возвращает все задачи и связи
+      parameters:
+      - description: ID задачи
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: '{ \'
+        in: body
+        name: status
+        required: true
+        schema:
+          type: object
+      produces:
+      - application/json
+      - application/json
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "403":
+          description: Forbidden
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      security:
+      - bearerAuth: []
+      - bearerAuth: []
+      - bearerAuth: []
+      summary: Граф зависимостей проекта
+      tags:
+      - Projects
+      - Tasks
+      - Projects
+swagger: "2.0"

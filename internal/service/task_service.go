@@ -5,12 +5,15 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"smartsync/internal/models"
 	"smartsync/internal/repository"
+	"time"
 
 	"github.com/nats-io/nats.go"
 	"github.com/redis/go-redis/v9"
+	"github.com/sony/gobreaker"
 )
 
 type TaskService struct {
@@ -18,10 +21,27 @@ type TaskService struct {
 	nc      *nats.Conn
 	redis   *redis.Client
 	authURL string
+	cb      *gobreaker.CircuitBreaker
 }
 
 func NewTaskService(repo *repository.TaskRepository, nc *nats.Conn, rdb *redis.Client) *TaskService {
-	return &TaskService{repo: repo, nc: nc, redis: rdb, authURL: "http://auth-service:8081"}
+	st := gobreaker.Settings{
+		Name:        "Auth-Service-CB",
+		MaxRequests: 3,
+		Interval:    10 * time.Second,
+		Timeout:     8 * time.Second,
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			failureRatio := float64(counts.TotalFailures) / float64(counts.Requests)
+			return counts.Requests >= 3 && failureRatio >= 0.5
+		},
+	}
+	return &TaskService{
+		repo:    repo,
+		nc:      nc,
+		redis:   rdb,
+		authURL: "http://auth-service:8081",
+		cb:      gobreaker.NewCircuitBreaker(st),
+	}
 }
 
 func (s *TaskService) triggerMathEngine(projectID int) {
@@ -261,12 +281,27 @@ func (s *TaskService) GetTasksByProject(projectID, userID int) ([]models.Task, e
 	}
 
 	reqBody, _ := json.Marshal(map[string]interface{}{"ids": ids})
-	resp, err := http.Post(s.authURL+"/internal/users/bulk", "application/json", bytes.NewBuffer(reqBody))
+	var names map[string]string
 
-	names := make(map[string]string)
-	if err == nil && resp.StatusCode == http.StatusOK {
+	// Пропускаем запрос через Circuit Breaker
+	_, cbErr := s.cb.Execute(func() (interface{}, error) {
+		resp, err := http.Post(s.authURL+"/internal/users/bulk", "application/json", bytes.NewBuffer(reqBody))
+		if err != nil {
+			return nil, fmt.Errorf("auth-service недоступен: %w", err)
+		}
 		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("auth-service вернул статус %d", resp.StatusCode)
+		}
+
 		json.NewDecoder(resp.Body).Decode(&names)
+		return nil, nil
+	})
+
+	if cbErr != nil {
+		log.Printf("⚠️ Circuit Breaker: Auth Service недоступен, имена не подгружены: %v", cbErr)
+		names = make(map[string]string)
 	}
 
 	for i := range tasks {

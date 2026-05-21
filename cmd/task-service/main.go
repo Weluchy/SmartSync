@@ -15,6 +15,10 @@ import (
 	"github.com/nats-io/nats.go"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/redis/go-redis/v9"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
+
+	_ "smartsync/cmd/task-service/docs"
 )
 
 func getEnv(key, fallback string) string {
@@ -65,7 +69,11 @@ func main() {
 
 	httpHandler := handler.NewHandler(taskService, projectService)
 	router := httpHandler.InitRoutes()
+
+	// Добавляем Prometheus middleware для всех маршрутов
+	router.Use(handler.PrometheusMiddleware())
 	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
+	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	log.Println("✅ Task Service запущен на порту 8080")
 	router.Run(":8080")
