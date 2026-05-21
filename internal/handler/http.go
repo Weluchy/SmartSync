@@ -105,8 +105,12 @@ func (h *Handler) deleteTask(c *gin.Context) {
 }
 
 func (h *Handler) createDependency(c *gin.Context) {
-	// Убрали getUserID, так как мы не проверяем права на создание связи
-	// (или это нужно добавить в сам метод CreateDependency в сервисе)
+	userID, err := getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
 	var dep struct {
 		DependsOnID int `json:"depends_on_id"`
 	}
@@ -117,7 +121,7 @@ func (h *Handler) createDependency(c *gin.Context) {
 
 	taskID, _ := strconv.Atoi(c.Param("id"))
 
-	if err := h.service.CreateDependency(taskID, dep.DependsOnID); err != nil {
+	if err := h.service.CreateDependency(taskID, dep.DependsOnID, userID); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
@@ -172,7 +176,10 @@ func (h *Handler) clearDependencies(c *gin.Context) {
 	}
 	projectID, _ := strconv.Atoi(c.Param("project_id"))
 
-	h.service.ClearDependencies(projectID, userID)
+	if err := h.service.ClearDependencies(projectID, userID); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "Граф сброшен"})
 }
 

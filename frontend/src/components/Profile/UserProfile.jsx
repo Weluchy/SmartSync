@@ -21,10 +21,8 @@ export default function UserProfile() {
 
   const loadAuditLogs = async () => {
     try {
-      const response = await api.get('/user/audit');
-      // В response.data уже лежит готовый массив от axios
-      console.log(response.data)
-      setAuditLogs(response.data || []);
+      const logs = await api.get('/user/audit');
+      setAuditLogs(logs || []);
     } catch (err) {
       console.error("Ошибка загрузки истории аудита:", err);
     }
@@ -111,17 +109,17 @@ export default function UserProfile() {
                     {auditLogs.map((log, index) => (
                       <tr key={index} className="hover:bg-gray-50/80 transition-all">
                         <td className="p-3 whitespace-nowrap text-gray-400">
-                          {new Date(log.created_at).toLocaleString()}
+                          {new Date(log.timestamp).toLocaleString()}
                         </td>
                         <td className="p-3 font-mono font-bold text-blue-600">#{log.task_id}</td>
                         <td className="p-3 font-semibold">
                           <span className="px-2 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded-md text-[10px]">
-                            {log.action}
+                            {log.action === 'updated' ? 'Обновление' : log.action === 'created' ? 'Создание' : log.action === 'status_changed' ? 'Смена статуса' : log.action}
                           </span>
                         </td>
                         <td className="p-3">
                           <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-md text-[10px] font-mono uppercase">
-                            {log.new_status}
+                            {log.payload?.status || '—'}
                           </span>
                         </td>
                       </tr>

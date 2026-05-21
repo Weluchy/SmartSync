@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -21,6 +22,10 @@ func AuthMiddleware() gin.HandlerFunc {
 		// Убираем слово "Bearer " из заголовка
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+			// Проверяем, что алгоритм подписи — HS256
+			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("неожиданный метод подписи: %v", token.Header["alg"])
+			}
 			return []byte("smartsync_diploma_secret_key_2026"), nil
 		})
 
@@ -31,8 +36,19 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 
 		// Достаем user_id из расшифрованного токена и кладем в контекст запроса
-		claims, _ := token.Claims.(jwt.MapClaims)
-		c.Set("user_id", int(claims["user_id"].(float64)))
+		claims, ok := token.Claims.(jwt.MapClaims)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Недействительный формат токена"})
+			c.Abort()
+			return
+		}
+		userIDFloat, ok := claims["user_id"].(float64)
+		if !ok {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Неверный формат user_id в токене"})
+			c.Abort()
+			return
+		}
+		c.Set("user_id", int(userIDFloat))
 		c.Next()
 	}
 }

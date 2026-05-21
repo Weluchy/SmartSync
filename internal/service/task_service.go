@@ -14,13 +14,14 @@ import (
 )
 
 type TaskService struct {
-	repo  *repository.TaskRepository
-	nc    *nats.Conn
-	redis *redis.Client
+	repo    *repository.TaskRepository
+	nc      *nats.Conn
+	redis   *redis.Client
+	authURL string
 }
 
 func NewTaskService(repo *repository.TaskRepository, nc *nats.Conn, rdb *redis.Client) *TaskService {
-	return &TaskService{repo: repo, nc: nc, redis: rdb}
+	return &TaskService{repo: repo, nc: nc, redis: rdb, authURL: "http://auth-service:8081"}
 }
 
 func (s *TaskService) triggerMathEngine(projectID int) {
@@ -29,14 +30,21 @@ func (s *TaskService) triggerMathEngine(projectID int) {
 }
 
 func (s *TaskService) CreateTask(t *models.Task) (int, error) {
-	if t.Opt == 0 {
+	if t.Opt <= 0 {
 		t.Opt = 1
 	}
-	if t.Real == 0 {
-		t.Real = 1
+	if t.Real <= 0 {
+		t.Real = 2
 	}
-	if t.Pess == 0 {
-		t.Pess = 1
+	if t.Pess <= 0 {
+		t.Pess = 3
+	}
+	// Проверка корректности PERT: opt <= real <= pess
+	if t.Opt > t.Real {
+		t.Real = t.Opt
+	}
+	if t.Real > t.Pess {
+		t.Pess = t.Real
 	}
 
 	id, err := s.repo.CreateTask(t)
@@ -78,17 +86,31 @@ func (s *TaskService) UpdateTask(t *models.Task) error {
 }
 
 func (s *TaskService) DeleteTask(taskID, userID int, heal bool) error {
-	pid, _ := s.repo.GetProjectIDByTask(taskID)
-	err := s.repo.DeleteTask(taskID, userID, heal)
+	pid, err := s.repo.GetProjectIDByTask(taskID)
+	if err != nil {
+		return fmt.Errorf("задача не найдена")
+	}
+	_, err = s.repo.CheckAccess(pid, userID, models.RoleWeights[models.RoleEditor])
+	if err != nil {
+		return err
+	}
+	err = s.repo.DeleteTask(taskID, userID, heal)
 	if err == nil {
 		s.triggerMathEngine(pid)
 	}
 	return err
 }
 
-func (s *TaskService) CreateDependency(taskID, dependsOnID int) error {
-	pid, _ := s.repo.GetProjectIDByTask(taskID)
-	err := s.repo.CreateDependency(taskID, dependsOnID)
+func (s *TaskService) CreateDependency(taskID, dependsOnID, userID int) error {
+	pid, err := s.repo.GetProjectIDByTask(taskID)
+	if err != nil {
+		return fmt.Errorf("задача не найдена")
+	}
+	_, err = s.repo.CheckAccess(pid, userID, models.RoleWeights[models.RoleEditor])
+	if err != nil {
+		return err
+	}
+	err = s.repo.CreateDependency(taskID, dependsOnID)
 	if err == nil {
 		s.triggerMathEngine(pid)
 	}
@@ -113,12 +135,18 @@ func (s *TaskService) ClearDependencies(projectID, userID int) error {
 }
 
 func (s *TaskService) GetGraph(ctx context.Context, projectID, userID int) (*models.GraphData, bool, error) {
+	_, err := s.repo.CheckAccess(projectID, userID, models.RoleWeights[models.RoleViewer])
+	if err != nil {
+		return nil, false, err
+	}
+
 	cacheKey := fmt.Sprintf("smartsync:graph:project:%d", projectID)
 	val, err := s.redis.Get(ctx, cacheKey).Result()
 	if err == nil {
 		var graph models.GraphData
-		json.Unmarshal([]byte(val), &graph)
-		return &graph, true, nil
+		if err := json.Unmarshal([]byte(val), &graph); err == nil {
+			return &graph, true, nil
+		}
 	}
 
 	graph, err := s.repo.GetGraphData(projectID, userID)
@@ -173,7 +201,7 @@ func (s *TaskService) GetTasksByProject(projectID, userID int) ([]models.Task, e
 	}
 
 	reqBody, _ := json.Marshal(map[string]interface{}{"ids": ids})
-	resp, err := http.Post("http://localhost:8081/internal/users/bulk", "application/json", bytes.NewBuffer(reqBody))
+	resp, err := http.Post(s.authURL+"/internal/users/bulk", "application/json", bytes.NewBuffer(reqBody))
 
 	names := make(map[string]string)
 	if err == nil && resp.StatusCode == http.StatusOK {

@@ -19,11 +19,11 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
       api.get(`/projects/${projectId}/members`).then(data => setMembers(data || []));
     }
     
-    if (initialData) {
-      setFormData({ ...initialData, assignee_id: initialData.assignee_id || '' });
+      if (initialData) {
+      setFormData({ ...initialData, assignee_id: initialData.assignee_id ?? '' });
       if (initialData.id) {
         api.get(`/logs/${initialData.id}`)
-          .then(res => setLogs(res.data || []))
+          .then(res => setLogs(res || []))
           .catch(err => console.error("Ошибка загрузки логов:", err));
       }
     } else {
@@ -38,7 +38,6 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
     e.preventDefault();
     onSave({
       ...formData,
-      // ИСПРАВЛЕНО: Строго переводим всё в Int, чтобы Go не ругался (400 Bad Request)
       assignee_id: formData.assignee_id ? parseInt(formData.assignee_id, 10) : null,
       opt: parseInt(formData.opt, 10) || 0,
       real: parseInt(formData.real, 10) || 0,
