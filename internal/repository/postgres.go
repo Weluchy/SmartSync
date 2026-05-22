@@ -13,6 +13,7 @@ type TaskRepository struct {
 func NewTaskRepository(db *sql.DB) *TaskRepository {
 	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'todo'`)
 	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignee_id INT REFERENCES users(id) ON DELETE SET NULL`)
+	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''`) // Защита поля
 	db.Exec(`CREATE TABLE IF NOT EXISTS comments (
 		id SERIAL PRIMARY KEY,
 		task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
@@ -25,7 +26,6 @@ func NewTaskRepository(db *sql.DB) *TaskRepository {
 
 func (r *TaskRepository) DB() *sql.DB { return r.db }
 
-// CheckAccess теперь универсален и работает на системе весов
 func (r *TaskRepository) CheckAccess(projectID, userID int, requiredWeight int) (string, error) {
 	var role string
 	err := r.db.QueryRow("SELECT role FROM project_members WHERE project_id = $1 AND user_id = $2", projectID, userID).Scan(&role)
@@ -49,22 +49,23 @@ func (r *TaskRepository) GetProjectIDByTask(taskID int) (int, error) {
 
 func (r *TaskRepository) GetByIDInternal(id int) (*models.Task, error) {
 	var t models.Task
+	// ТОЧЕЧНЫЙ ФИКС: Добавили description
 	err := r.db.QueryRow(`
-		SELECT id, project_id, status, title, user_id, assignee_id 
+		SELECT id, project_id, status, title, description, user_id, assignee_id, opt, real, pess 
 		FROM tasks WHERE id = $1`, id).
-		Scan(&t.ID, &t.ProjectID, &t.Status, &t.Title, &t.UserID, &t.AssigneeID)
+		Scan(&t.ID, &t.ProjectID, &t.Status, &t.Title, &t.Description, &t.UserID, &t.AssigneeID, &t.Opt, &t.Real, &t.Pess)
 	return &t, err
 }
 
 func (r *TaskRepository) CreateTask(t *models.Task) (int, error) {
-	// Для создания задачи нужен вес Editor (40)
 	if _, err := r.CheckAccess(t.ProjectID, t.UserID, models.RoleWeights[models.RoleEditor]); err != nil {
 		return 0, err
 	}
 	var id int
-	err := r.db.QueryRow(`INSERT INTO tasks (title, opt, real, pess, user_id, project_id, status, assignee_id) 
-		VALUES ($1, $2, $3, $4, $5, $6, 'todo', $7) RETURNING id`,
-		t.Title, t.Opt, t.Real, t.Pess, t.UserID, t.ProjectID, t.AssigneeID).Scan(&id)
+	// ТОЧЕЧНЫЙ ФИКС: Добавили description
+	err := r.db.QueryRow(`INSERT INTO tasks (title, description, opt, real, pess, user_id, project_id, status, assignee_id) 
+		VALUES ($1, $2, $3, $4, $5, $6, $7, 'todo', $8) RETURNING id`,
+		t.Title, t.Description, t.Opt, t.Real, t.Pess, t.UserID, t.ProjectID, t.AssigneeID).Scan(&id)
 	return id, err
 }
 
@@ -73,17 +74,16 @@ func (r *TaskRepository) UpdateTask(t *models.Task) error {
 	if err != nil {
 		return err
 	}
-	// Для изменения параметров задачи (имя, оценки) нужен вес Editor (40)
 	if _, err := r.CheckAccess(pid, t.UserID, models.RoleWeights[models.RoleEditor]); err != nil {
 		return err
 	}
-	_, err = r.db.Exec(`UPDATE tasks SET title = $1, opt = $2, real = $3, pess = $4, assignee_id = $5 WHERE id = $6`,
-		t.Title, t.Opt, t.Real, t.Pess, t.AssigneeID, t.ID)
+	// ТОЧЕЧНЫЙ ФИКС: Добавили description
+	_, err = r.db.Exec(`UPDATE tasks SET title = $1, description = $2, opt = $3, real = $4, pess = $5, assignee_id = $6 WHERE id = $7`,
+		t.Title, t.Description, t.Opt, t.Real, t.Pess, t.AssigneeID, t.ID)
 	return err
 }
 
 func (r *TaskRepository) UpdateTaskStatus(taskID int, status string) error {
-	// Сама смена статуса в БД не проверяет права, это делает Service
 	_, err := r.db.Exec("UPDATE tasks SET status = $1 WHERE id = $2", status, taskID)
 	return err
 }
@@ -93,7 +93,6 @@ func (r *TaskRepository) DeleteTask(taskID, userID int, heal bool) error {
 	if err != nil {
 		return err
 	}
-	// Удаление — серьезное действие, требующее веса Admin (80)
 	if _, err := r.CheckAccess(pid, userID, models.RoleWeights[models.RoleAdmin]); err != nil {
 		return err
 	}
@@ -111,7 +110,6 @@ func (r *TaskRepository) DeleteDependency(taskID, dependsOnID, userID int) error
 	if err != nil {
 		return err
 	}
-	// Для изменения структуры графа нужен вес Editor (40)
 	if _, err := r.CheckAccess(pid, userID, models.RoleWeights[models.RoleEditor]); err != nil {
 		return err
 	}
@@ -120,7 +118,6 @@ func (r *TaskRepository) DeleteDependency(taskID, dependsOnID, userID int) error
 }
 
 func (r *TaskRepository) ClearDependencies(projectID, userID int) error {
-	// Сброс всех связей — деструктивное действие, нужен вес Admin (80)
 	if _, err := r.CheckAccess(projectID, userID, models.RoleWeights[models.RoleAdmin]); err != nil {
 		return err
 	}
@@ -129,15 +126,15 @@ func (r *TaskRepository) ClearDependencies(projectID, userID int) error {
 }
 
 func (r *TaskRepository) GetGraphData(projectID, userID int) (*models.GraphData, error) {
-	// Для просмотра достаточно веса Viewer (10)
 	if _, err := r.CheckAccess(projectID, userID, models.RoleWeights[models.RoleViewer]); err != nil {
 		return nil, err
 	}
 	graph := &models.GraphData{}
 
+	// ТОЧЕЧНЫЙ ФИКС: Добавили description, user_id и assignee_id, чтобы Граф мог их показать
 	query := `
 		SELECT 
-			id, title, opt, real, pess, 
+			id, title, description, opt, real, pess, user_id, assignee_id,
 			COALESCE(duration_hours, 0.0), 
 			COALESCE(priority_score, 0.0), 
 			status 
@@ -152,7 +149,7 @@ func (r *TaskRepository) GetGraphData(projectID, userID int) (*models.GraphData,
 
 	for rowsNodes.Next() {
 		var t models.Task
-		rowsNodes.Scan(&t.ID, &t.Title, &t.Opt, &t.Real, &t.Pess, &t.DurationHours, &t.PriorityScore, &t.Status)
+		rowsNodes.Scan(&t.ID, &t.Title, &t.Description, &t.Opt, &t.Real, &t.Pess, &t.UserID, &t.AssigneeID, &t.DurationHours, &t.PriorityScore, &t.Status)
 		graph.Nodes = append(graph.Nodes, t)
 	}
 
@@ -168,12 +165,12 @@ func (r *TaskRepository) GetGraphData(projectID, userID int) (*models.GraphData,
 }
 
 func (r *TaskRepository) GetTasksByProject(projectID, userID int) ([]models.Task, error) {
-	// Для просмотра списка достаточно веса Viewer (10)
 	if _, err := r.CheckAccess(projectID, userID, models.RoleWeights[models.RoleViewer]); err != nil {
 		return nil, err
 	}
 	var tasks []models.Task
-	query := `SELECT id, project_id, user_id, assignee_id, title, status, opt, real, pess, 
+	// ТОЧЕЧНЫЙ ФИКС: Добавили description
+	query := `SELECT id, project_id, user_id, assignee_id, title, description, status, opt, real, pess, 
 		COALESCE(duration_hours, 0.0), COALESCE(priority_score, 0.0) FROM tasks WHERE project_id = $1`
 	rows, err := r.db.Query(query, projectID)
 	if err != nil {
@@ -182,7 +179,7 @@ func (r *TaskRepository) GetTasksByProject(projectID, userID int) ([]models.Task
 	defer rows.Close()
 	for rows.Next() {
 		var t models.Task
-		rows.Scan(&t.ID, &t.ProjectID, &t.UserID, &t.AssigneeID, &t.Title, &t.Status, &t.Opt, &t.Real, &t.Pess, &t.DurationHours, &t.PriorityScore)
+		rows.Scan(&t.ID, &t.ProjectID, &t.UserID, &t.AssigneeID, &t.Title, &t.Description, &t.Status, &t.Opt, &t.Real, &t.Pess, &t.DurationHours, &t.PriorityScore)
 		tasks = append(tasks, t)
 	}
 	return tasks, nil
@@ -205,8 +202,9 @@ func (r *TaskRepository) GetDependenciesByProject(projectID int) ([]models.Depen
 
 func (r *TaskRepository) GetByID(id, userID int) (*models.Task, error) {
 	var t models.Task
-	err := r.db.QueryRow("SELECT id, project_id, status, title FROM tasks WHERE id = $1 AND user_id = $2", id, userID).
-		Scan(&t.ID, &t.ProjectID, &t.Status, &t.Title)
+	// ТОЧЕЧНЫЙ ФИКС: Добавили description
+	err := r.db.QueryRow("SELECT id, project_id, status, title, description FROM tasks WHERE id = $1 AND user_id = $2", id, userID).
+		Scan(&t.ID, &t.ProjectID, &t.Status, &t.Title, &t.Description)
 	return &t, err
 }
 

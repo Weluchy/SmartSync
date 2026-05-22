@@ -49,6 +49,63 @@ func (s *TaskService) triggerMathEngine(projectID int) {
 	s.nc.Publish("project.updated", []byte(fmt.Sprintf(`{"project_id": %d}`, projectID)))
 }
 
+// ТОЧЕЧНЫЙ ФИКС: Твоя логика вынесена сюда, чтобы Граф тоже её получал
+func (s *TaskService) enrichTasks(tasks []models.Task) []models.Task {
+	if len(tasks) == 0 {
+		return tasks
+	}
+	userIDsMap := make(map[int]bool)
+	for _, t := range tasks {
+		userIDsMap[t.UserID] = true
+		if t.AssigneeID != nil {
+			userIDsMap[*t.AssigneeID] = true
+		}
+	}
+	var ids []int
+	for id := range userIDsMap {
+		ids = append(ids, id)
+	}
+
+	reqBody, _ := json.Marshal(map[string]interface{}{"ids": ids})
+	var names map[string]string
+
+	_, cbErr := s.cb.Execute(func() (interface{}, error) {
+		resp, err := http.Post(s.authURL+"/internal/users/bulk", "application/json", bytes.NewBuffer(reqBody))
+		if err != nil {
+			return nil, fmt.Errorf("auth-service недоступен: %w", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("auth-service вернул статус %d", resp.StatusCode)
+		}
+		json.NewDecoder(resp.Body).Decode(&names)
+		return nil, nil
+	})
+
+	if cbErr != nil {
+		log.Printf("⚠️ Circuit Breaker: Auth Service недоступен: %v", cbErr)
+		names = make(map[string]string)
+	}
+
+	for i := range tasks {
+		uid := fmt.Sprintf("%d", tasks[i].UserID)
+		if val, ok := names[uid]; ok && val != "" {
+			tasks[i].CreatedByName = val
+		} else {
+			tasks[i].CreatedByName = "Неизвестный автор"
+		}
+		if tasks[i].AssigneeID != nil {
+			aid := fmt.Sprintf("%d", *tasks[i].AssigneeID)
+			if val, ok := names[aid]; ok && val != "" {
+				tasks[i].AssigneeName = val
+			} else {
+				tasks[i].AssigneeName = "Не назначен"
+			}
+		}
+	}
+	return tasks
+}
+
 func (s *TaskService) CreateTask(t *models.Task) (int, error) {
 	if t.Opt <= 0 {
 		t.Opt = 1
@@ -59,7 +116,6 @@ func (s *TaskService) CreateTask(t *models.Task) (int, error) {
 	if t.Pess <= 0 {
 		t.Pess = 3
 	}
-	// Проверка корректности PERT: opt <= real <= pess
 	if t.Opt > t.Real {
 		t.Real = t.Opt
 	}
@@ -70,8 +126,6 @@ func (s *TaskService) CreateTask(t *models.Task) (int, error) {
 	id, err := s.repo.CreateTask(t)
 	if err == nil {
 		s.triggerMathEngine(t.ProjectID)
-
-		// ИСПРАВЛЕНО: Отправляем лог создания с user_id
 		auditMsg, _ := json.Marshal(map[string]interface{}{
 			"task_id": id,
 			"action":  "created",
@@ -79,9 +133,7 @@ func (s *TaskService) CreateTask(t *models.Task) (int, error) {
 			"summary": fmt.Sprintf("Создана задача «%s»", t.Title),
 			"payload": map[string]interface{}{
 				"title": t.Title,
-				"opt":   t.Opt,
-				"real":  t.Real,
-				"pess":  t.Pess,
+				"opt":   t.Opt, "real": t.Real, "pess": t.Pess,
 			},
 		})
 		s.nc.Publish("task.audit", auditMsg)
@@ -91,24 +143,23 @@ func (s *TaskService) CreateTask(t *models.Task) (int, error) {
 
 func (s *TaskService) UpdateTask(t *models.Task) error {
 	pid, _ := s.repo.GetProjectIDByTask(t.ID)
-
-	_, err := s.repo.CheckAccess(pid, t.UserID, models.RoleWeights[models.RoleEditor])
-	if err != nil {
+	if _, err := s.repo.CheckAccess(pid, t.UserID, models.RoleWeights[models.RoleEditor]); err != nil {
 		return err
 	}
 
-	// Получаем старую версию задачи для diff
 	oldTask, oldErr := s.repo.GetByIDInternal(t.ID)
-
-	err = s.repo.UpdateTask(t)
+	err := s.repo.UpdateTask(t)
 	if err == nil {
 		s.triggerMathEngine(pid)
 
-		// Формируем diff изменений
 		changes := []string{}
 		if oldErr == nil {
 			if oldTask.Title != t.Title {
 				changes = append(changes, fmt.Sprintf("название: «%s» → «%s»", oldTask.Title, t.Title))
+			}
+			// ТОЧЕЧНЫЙ ФИКС: логируем изменение описания
+			if oldTask.Description != t.Description {
+				changes = append(changes, "изменено описание задачи")
 			}
 			if oldTask.Opt != t.Opt {
 				changes = append(changes, fmt.Sprintf("оптимистичная оценка: %dч → %dч", oldTask.Opt, t.Opt))
@@ -144,10 +195,7 @@ func (s *TaskService) UpdateTask(t *models.Task) error {
 			"summary": summary,
 			"changes": changes,
 			"payload": map[string]interface{}{
-				"title": t.Title,
-				"opt":   t.Opt,
-				"real":  t.Real,
-				"pess":  t.Pess,
+				"title": t.Title, "opt": t.Opt, "real": t.Real, "pess": t.Pess,
 			},
 		})
 		s.nc.Publish("task.audit", auditMsg)
@@ -160,8 +208,7 @@ func (s *TaskService) DeleteTask(taskID, userID int, heal bool) error {
 	if err != nil {
 		return fmt.Errorf("задача не найдена")
 	}
-	_, err = s.repo.CheckAccess(pid, userID, models.RoleWeights[models.RoleEditor])
-	if err != nil {
+	if _, err = s.repo.CheckAccess(pid, userID, models.RoleWeights[models.RoleEditor]); err != nil {
 		return err
 	}
 	err = s.repo.DeleteTask(taskID, userID, heal)
@@ -176,8 +223,7 @@ func (s *TaskService) CreateDependency(taskID, dependsOnID, userID int) error {
 	if err != nil {
 		return fmt.Errorf("задача не найдена")
 	}
-	_, err = s.repo.CheckAccess(pid, userID, models.RoleWeights[models.RoleEditor])
-	if err != nil {
+	if _, err = s.repo.CheckAccess(pid, userID, models.RoleWeights[models.RoleEditor]); err != nil {
 		return err
 	}
 	err = s.repo.CreateDependency(taskID, dependsOnID)
@@ -205,8 +251,7 @@ func (s *TaskService) ClearDependencies(projectID, userID int) error {
 }
 
 func (s *TaskService) GetGraph(ctx context.Context, projectID, userID int) (*models.GraphData, bool, error) {
-	_, err := s.repo.CheckAccess(projectID, userID, models.RoleWeights[models.RoleViewer])
-	if err != nil {
+	if _, err := s.repo.CheckAccess(projectID, userID, models.RoleWeights[models.RoleViewer]); err != nil {
 		return nil, false, err
 	}
 
@@ -215,11 +260,15 @@ func (s *TaskService) GetGraph(ctx context.Context, projectID, userID int) (*mod
 	if err == nil {
 		var graph models.GraphData
 		if err := json.Unmarshal([]byte(val), &graph); err == nil {
+			graph.Nodes = s.enrichTasks(graph.Nodes) // ТОЧЕЧНЫЙ ФИКС: Обогащаем кэш
 			return &graph, true, nil
 		}
 	}
 
 	graph, err := s.repo.GetGraphData(projectID, userID)
+	if err == nil && graph != nil {
+		graph.Nodes = s.enrichTasks(graph.Nodes) // ТОЧЕЧНЫЙ ФИКС: Обогащаем БД
+	}
 	return graph, false, err
 }
 
@@ -228,7 +277,6 @@ func (s *TaskService) UpdateTaskStatus(taskID, userID int, status string) error 
 	if err != nil {
 		return fmt.Errorf("задача не найдена")
 	}
-
 	role, err := s.repo.CheckAccess(task.ProjectID, userID, models.RoleWeights[models.RoleViewer])
 	if err != nil {
 		return err
@@ -236,7 +284,6 @@ func (s *TaskService) UpdateTaskStatus(taskID, userID int, status string) error 
 
 	isAssignee := task.AssigneeID != nil && *task.AssigneeID == userID
 	isManager := models.RoleWeights[role] >= models.RoleWeights[models.RoleAdmin]
-
 	if !isAssignee && !isManager {
 		return fmt.Errorf("вы не исполнитель этой задачи и не администратор проекта")
 	}
@@ -244,8 +291,6 @@ func (s *TaskService) UpdateTaskStatus(taskID, userID int, status string) error 
 	err = s.repo.UpdateTaskStatus(taskID, status)
 	if err == nil {
 		s.triggerMathEngine(task.ProjectID)
-
-		// ИСПРАВЛЕНО: Отправляем лог с user_id и diff статусов
 		auditMsg, _ := json.Marshal(map[string]interface{}{
 			"task_id": taskID,
 			"action":  "status_changed",
@@ -253,8 +298,7 @@ func (s *TaskService) UpdateTaskStatus(taskID, userID int, status string) error 
 			"summary": fmt.Sprintf("Статус задачи «%s» изменён: %s → %s", task.Title, task.Status, status),
 			"changes": []string{fmt.Sprintf("статус: %s → %s", task.Status, status)},
 			"payload": map[string]interface{}{
-				"old_status": task.Status,
-				"new_status": status,
+				"old_status": task.Status, "new_status": status,
 			},
 		})
 		s.nc.Publish("task.audit", auditMsg)
@@ -267,61 +311,7 @@ func (s *TaskService) GetTasksByProject(projectID, userID int) ([]models.Task, e
 	if err != nil || len(tasks) == 0 {
 		return tasks, err
 	}
-
-	userIDsMap := make(map[int]bool)
-	for _, t := range tasks {
-		userIDsMap[t.UserID] = true
-		if t.AssigneeID != nil {
-			userIDsMap[*t.AssigneeID] = true
-		}
-	}
-	var ids []int
-	for id := range userIDsMap {
-		ids = append(ids, id)
-	}
-
-	reqBody, _ := json.Marshal(map[string]interface{}{"ids": ids})
-	var names map[string]string
-
-	// Пропускаем запрос через Circuit Breaker
-	_, cbErr := s.cb.Execute(func() (interface{}, error) {
-		resp, err := http.Post(s.authURL+"/internal/users/bulk", "application/json", bytes.NewBuffer(reqBody))
-		if err != nil {
-			return nil, fmt.Errorf("auth-service недоступен: %w", err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("auth-service вернул статус %d", resp.StatusCode)
-		}
-
-		json.NewDecoder(resp.Body).Decode(&names)
-		return nil, nil
-	})
-
-	if cbErr != nil {
-		log.Printf("⚠️ Circuit Breaker: Auth Service недоступен, имена не подгружены: %v", cbErr)
-		names = make(map[string]string)
-	}
-
-	for i := range tasks {
-		uid := fmt.Sprintf("%d", tasks[i].UserID)
-		if val, ok := names[uid]; ok && val != "" {
-			tasks[i].CreatedByName = val
-		} else {
-			tasks[i].CreatedByName = "Неизвестный автор"
-		}
-
-		if tasks[i].AssigneeID != nil {
-			aid := fmt.Sprintf("%d", *tasks[i].AssigneeID)
-			if val, ok := names[aid]; ok && val != "" {
-				tasks[i].AssigneeName = val
-			} else {
-				tasks[i].AssigneeName = "Не назначен"
-			}
-		}
-	}
-	return tasks, nil
+	return s.enrichTasks(tasks), nil // ТОЧЕЧНЫЙ ФИКС: Использована общая функция
 }
 
 func (s *TaskService) GetDependenciesByProject(projectID int) ([]models.Dependency, error) {

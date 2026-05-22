@@ -25,7 +25,6 @@ export default function UserProfile() {
       const logs = await api.get('/user/audit');
       setAuditLogs(logs || []);
 
-      // Собираем все user_id из логов, чтобы получить имена
       const userIds = [...new Set((logs || []).map(l => l.user_id).filter(Boolean))];
       if (userIds.length > 0) {
         const namesMap = await api.post('/internal/users/bulk', { ids: userIds });
@@ -43,6 +42,7 @@ export default function UserProfile() {
 
   const handleSave = async () => {
     try {
+      // ТОЧЕЧНЫЙ ФИКС: сохраняем profile, где теперь обновляется и username
       await api.put('/user/profile', profile);
       alert('Данные успешно обновлены!');
     } catch (err) { alert('Ошибка: ' + err.message); }
@@ -52,7 +52,6 @@ export default function UserProfile() {
     <div className="h-full w-full bg-gray-50 p-6 overflow-y-auto">
       <div className="w-full max-w-4xl mx-auto space-y-6">
         
-        {/* Карточка профиля */}
         <div className="flex flex-col bg-white rounded-2xl shadow-xl border overflow-hidden">
           <div className="h-[72px] px-8 border-b flex items-center justify-between bg-white">
             <h3 className="font-bold text-gray-700 uppercase text-xs tracking-widest">Настройки профиля</h3>
@@ -67,7 +66,13 @@ export default function UserProfile() {
                 <User size={40} />
               </div>
               <div>
-                <h2 className="text-xl font-bold text-gray-800">{profile.username}</h2>
+                {/* ТОЧЕЧНЫЙ ФИКС: Сделал username редактируемым полем, как и стек/статус */}
+                <input 
+                  className="text-xl font-bold text-gray-800 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 outline-none mb-1 pb-1"
+                  value={profile.username}
+                  placeholder="Ваше имя"
+                  onChange={e => setProfile({...profile, username: e.target.value})}
+                />
                 <p className="text-sm text-gray-400">ID пользователя: {localStorage.getItem('userId') || '—'}</p>
               </div>
             </div>
@@ -93,7 +98,6 @@ export default function UserProfile() {
           </div>
         </div>
 
-        {/* Таблица аудита действий (Для исследования в дипломе) */}
         <div className="bg-white rounded-2xl shadow-xl border overflow-hidden">
           <div className="h-[72px] px-8 border-b flex items-center gap-2 bg-white">
             <History size={16} className="text-gray-500" />
@@ -118,11 +122,7 @@ export default function UserProfile() {
                     {auditLogs.map((log, index) => {
                       const time = new Date(log.timestamp);
                       const timeStr = time.toLocaleString('ru-RU', {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        day: 'numeric',
-                        month: 'numeric',
-                        year: 'numeric'
+                        hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'numeric', year: 'numeric'
                       });
 
                       const actionLabel = log.action === 'updated' ? 'Обновление' 

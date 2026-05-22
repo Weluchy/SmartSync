@@ -84,9 +84,11 @@ export default function TaskGraph({ projectId }) {
         else if (isCritical) { bg = '#fee2e2'; border = '#ef4444'; text = '#991b1b'; }
         else if (isInProgress) { bg = '#dbeafe'; border = '#2563eb'; text = '#1e3a8a'; }
 
+        // ТОЧЕЧНЫЙ ФИКС: Выводим имена исполнителей и описание (в title)
         return {
           id: t.id,
-          label: `[${t.id}] ${t.title}\n${score.toFixed(1)}ч`,
+          label: `[${t.id}] ${t.title}\nИсп: ${t.assignee_name || 'Нет'}\n${score.toFixed(1)}ч`,
+          title: `Автор: ${t.created_by_name || 'Неизвестно'}\nИсполнитель: ${t.assignee_name || 'Не назначен'}\nСтатус: ${t.status}\n\nОписание:\n${t.description || 'Нет описания'}`,
           color: { background: bg, border: border },
           font: { size: 13, multi: true, color: text },
           shape: 'box',
@@ -112,7 +114,6 @@ export default function TaskGraph({ projectId }) {
         interaction: { multiselect: true, hover: true }
       });
 
-      // Авто-масштаб после отрисовки
       networkRef.current.once("afterDrawing", () => networkRef.current.fit());
 
       networkRef.current.on("click", (params) => {
@@ -148,8 +149,6 @@ export default function TaskGraph({ projectId }) {
 
   useEffect(() => {
   loadGraphData();
-
-  // ПРИКАЗ: Граф тяжелее доски, поэтому опрашиваем чуть реже — раз в 15 секунд
   const interval = setInterval(() => {
     loadGraphData();
   }, 15000);
@@ -162,7 +161,6 @@ export default function TaskGraph({ projectId }) {
 
   return (
     <div className="h-full w-full bg-gray-50 p-6 overflow-hidden">
-      {/* ПРИКАЗ: Окно во всю ширину */}
       <div className="w-full h-full flex flex-col bg-white rounded-2xl shadow-xl border overflow-hidden transition-all">
         <div className="h-[72px] min-h-[72px] px-8 border-b flex justify-between items-center bg-white z-10">
           <div>
