@@ -54,7 +54,7 @@ const changeRole = async (userId, newRole) => {
  
 
   return (
-    <aside className="w-72 bg-white border-r border-gray-200 flex flex-col shadow-sm">
+    <aside className="w-72 flex flex-col shadow-sm" style={{ backgroundColor: 'var(--bg-sidebar)', borderRight: '1px solid var(--border)' }}>
       <div className="p-6 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
         <h2 className="text-xl font-black text-blue-600 tracking-tight italic">SmartSync.engine</h2>
         <button onClick={toggleTheme} className="p-2 rounded-lg transition-colors" style={{ color: 'var(--text-secondary)' }} title={isDark ? 'Светлая тема' : 'Тёмная тема'}>
@@ -64,7 +64,7 @@ const changeRole = async (userId, newRole) => {
 
       <div className="flex-1 overflow-y-auto p-4 space-y-1">
         <div className="flex items-center justify-between mb-4 px-2">
-          <span className="text-xs font-bold text-gray-400 uppercase tracking-widest">Проекты</span>
+          <span className="text-xs font-bold uppercase tracking-widest" style={{ color: 'var(--text-muted)' }}>Проекты</span>
           <button 
             onClick={() => {
               const name = prompt('Название нового проекта:');
@@ -80,8 +80,9 @@ const changeRole = async (userId, newRole) => {
           <div 
             key={p.id}
             onClick={() => onSelectProject(p.id)}
+            style={{ color: currentProjectId === p.id ? '' : 'var(--text-secondary)' }}
             className={`group flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition-all ${
-              currentProjectId === p.id ? 'bg-blue-50 text-blue-700 shadow-sm font-bold' : 'text-gray-600 hover:bg-gray-50'
+              currentProjectId === p.id ? 'bg-blue-50 text-blue-700 shadow-sm font-bold' : 'hover:opacity-80'
             }`}
           >
             <span className="truncate text-sm font-medium">{p.name}</span>
@@ -92,8 +93,8 @@ const changeRole = async (userId, newRole) => {
 
       {/* Входящие приглашения (уже было добавлено) */}
       {invitations.length > 0 && (
-        <div className="p-4 border-t border-gray-100 bg-blue-50/30">
-          <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest block mb-3 px-2">Приглашения</span>
+        <div className="p-4 border-t" style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(59,130,246,0.05)' }}>
+          <span className="text-[10px] font-bold uppercase tracking-widest block mb-3 px-2" style={{ color: 'var(--text-muted)' }}>Приглашения</span>
           <div className="space-y-2">
             {invitations.map(inv => (
               <div key={inv.id} className="bg-white p-3 rounded-xl border border-blue-100 shadow-sm">
@@ -109,8 +110,8 @@ const changeRole = async (userId, newRole) => {
 
       {/* НОВОЕ: СПИСОК УЧАСТНИКОВ И ФОРМА ПРИГЛАШЕНИЯ */}
       {currentProjectId && (
-        <div className="p-4 border-t border-gray-100 bg-gray-50/50">
-          <div className="flex items-center gap-2 mb-3 px-2 text-gray-500">
+        <div className="p-4 border-t" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card-hover)' }}>
+          <div className="flex items-center gap-2 mb-3 px-2" style={{ color: 'var(--text-muted)' }}>
             <Users size={14} />
             <span className="text-[10px] font-bold uppercase tracking-widest">Участники</span>
           </div>

@@ -1,18 +1,20 @@
-import { useState, useEffect, useCallback } from 'react'; // Добавили useCallback
+import { useState, useEffect, useCallback } from 'react';
 import { api } from './api/client';
 import MainLayout from './components/Layout/MainLayout';
 import Sidebar from './components/Sidebar/Sidebar';
 import KanbanBoard from './components/Kanban/KanbanBoard';
 import TaskGraph from './components/Graph/TaskGraph';
 import UserProfile from './components/Profile/UserProfile';
+import Dashboard from './components/Dashboard/Dashboard';
+import UserProfilePage from './components/Profile/UserProfilePage';
 
 export default function App() {
-  // 1. Сначала все стейты
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('token'));
   const [projects, setProjects] = useState([]);
   const [currentProjectId, setCurrentProjectId] = useState(null);
   const [activeView, setActiveView] = useState('graph');
   const [invitations, setInvitations] = useState([]);
+  const [viewUserId, setViewUserId] = useState(null); // для просмотра чужого профиля
   
   const [authMode, setAuthMode] = useState('login');
   const [username, setUsername] = useState('');
@@ -97,12 +99,17 @@ const loadInvitations = useCallback(async () => {
   activeView={activeView}
   onSwitchView={setActiveView}
   onLogout={logout}
+  tasks={[]}
 >
-  {/* УСЛОВИЕ ДЛЯ ТРЕХ ВИДОВ */}
-  {activeView === 'kanban' ? (
-    <KanbanBoard projectId={currentProjectId} />
+   {/* УСЛОВИЕ ДЛЯ ВИДОВ */}
+  {viewUserId ? (
+    <UserProfilePage projectId={currentProjectId} userId={viewUserId} onBack={() => setViewUserId(null)} />
+  ) : activeView === 'kanban' ? (
+    <KanbanBoard projectId={currentProjectId} onTasksChange={(t) => console.log('tasks loaded:', t?.length)} onViewUser={(uid) => setViewUserId(uid)} />
   ) : activeView === 'profile' ? (
     <UserProfile />
+  ) : activeView === 'dashboard' ? (
+    <Dashboard projectId={currentProjectId} />
   ) : (
     <TaskGraph projectId={currentProjectId} />
   )}

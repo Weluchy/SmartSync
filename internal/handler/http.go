@@ -41,6 +41,9 @@ func (h *Handler) InitRoutes() *gin.Engine {
 		protected.GET("/invitations/my", h.getMyInvitations)
 		protected.POST("/tasks/:id/comments", h.addComment)
 		protected.GET("/tasks/:id/comments", h.getComments)
+		protected.GET("/projects/:project_id/milestones", h.getMilestones)
+		protected.POST("/projects/:project_id/milestones", h.createMilestone)
+		protected.GET("/projects/:project_id/stats", h.getProjectStats)
 	}
 	projectHandler := NewProjectHandler(h.projectService)
 	projectHandler.RegisterRoutes(protected)

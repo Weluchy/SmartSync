@@ -152,8 +152,12 @@ func main() {
 
 		protected.GET("/logs/:task_id", auditProxy)
 		protected.POST("/internal/users/bulk", authProxy)
+		protected.GET("/users/:id", authProxy)
 		protected.POST("/tasks/:id/comments", taskProxy)
 		protected.GET("/tasks/:id/comments", taskProxy)
+		protected.GET("/projects/:project_id/stats", taskProxy)
+		protected.GET("/projects/:project_id/milestones", taskProxy)
+		protected.POST("/projects/:project_id/milestones", taskProxy)
 	}
 
 	log.Println("API Gateway запущен на порту 8000")

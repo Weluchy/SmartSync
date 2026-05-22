@@ -13,12 +13,22 @@ type TaskRepository struct {
 func NewTaskRepository(db *sql.DB) *TaskRepository {
 	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'todo'`)
 	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignee_id INT REFERENCES users(id) ON DELETE SET NULL`)
-	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''`) // Защита поля
+	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''`)
+	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS milestone_id INT REFERENCES milestones(id) ON DELETE SET NULL`)
+	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deadline_at BIGINT DEFAULT 0`)
 	db.Exec(`CREATE TABLE IF NOT EXISTS comments (
 		id SERIAL PRIMARY KEY,
 		task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
 		user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
 		text TEXT NOT NULL,
+		created_at TIMESTAMP DEFAULT NOW()
+	)`)
+	db.Exec(`CREATE TABLE IF NOT EXISTS milestones (
+		id SERIAL PRIMARY KEY,
+		project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+		title VARCHAR(255) NOT NULL,
+		description TEXT DEFAULT '',
+		deadline TIMESTAMP NOT NULL DEFAULT NOW(),
 		created_at TIMESTAMP DEFAULT NOW()
 	)`)
 	return &TaskRepository{db: db}
@@ -170,8 +180,9 @@ func (r *TaskRepository) GetTasksByProject(projectID, userID int) ([]models.Task
 	}
 	var tasks []models.Task
 	// ТОЧЕЧНЫЙ ФИКС: Добавили description
-	query := `SELECT id, project_id, user_id, assignee_id, title, description, status, opt, real, pess, 
-		COALESCE(duration_hours, 0.0), COALESCE(priority_score, 0.0) FROM tasks WHERE project_id = $1`
+	query := `SELECT t.id, t.project_id, t.user_id, t.assignee_id, t.title, t.description, t.status, t.opt, t.real, t.pess, 
+		COALESCE(t.duration_hours, 0.0), COALESCE(t.priority_score, 0.0), t.milestone_id, t.deadline_at 
+		FROM tasks t WHERE t.project_id = $1`
 	rows, err := r.db.Query(query, projectID)
 	if err != nil {
 		return nil, err
@@ -179,10 +190,65 @@ func (r *TaskRepository) GetTasksByProject(projectID, userID int) ([]models.Task
 	defer rows.Close()
 	for rows.Next() {
 		var t models.Task
-		rows.Scan(&t.ID, &t.ProjectID, &t.UserID, &t.AssigneeID, &t.Title, &t.Description, &t.Status, &t.Opt, &t.Real, &t.Pess, &t.DurationHours, &t.PriorityScore)
+		rows.Scan(&t.ID, &t.ProjectID, &t.UserID, &t.AssigneeID, &t.Title, &t.Description, &t.Status, &t.Opt, &t.Real, &t.Pess, &t.DurationHours, &t.PriorityScore, &t.MilestoneID, &t.DeadlineAt)
 		tasks = append(tasks, t)
 	}
 	return tasks, nil
+}
+
+func (r *TaskRepository) GetMilestones(projectID int) ([]models.Milestone, error) {
+	rows, err := r.db.Query(`SELECT id, project_id, title, description, deadline, created_at FROM milestones WHERE project_id = $1 ORDER BY deadline ASC`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ms []models.Milestone
+	for rows.Next() {
+		var m models.Milestone
+		rows.Scan(&m.ID, &m.ProjectID, &m.Title, &m.Description, &m.Deadline, &m.CreatedAt)
+		ms = append(ms, m)
+	}
+	return ms, nil
+}
+
+func (r *TaskRepository) CreateMilestone(projectID int, title string, deadline string) (*models.Milestone, error) {
+	var m models.Milestone
+	err := r.db.QueryRow(`
+		INSERT INTO milestones (project_id, title, deadline) 
+		VALUES ($1, $2, $3) RETURNING id, project_id, title, description, deadline, created_at`,
+		projectID, title, deadline).Scan(&m.ID, &m.ProjectID, &m.Title, &m.Description, &m.Deadline, &m.CreatedAt)
+	return &m, err
+}
+
+type ProjectStats struct {
+	Total       int     `json:"total"`
+	Todo        int     `json:"todo"`
+	InProgress  int     `json:"in_progress"`
+	Done        int     `json:"done"`
+	TotalHours  float64 `json:"total_hours"`
+	AvgPriority float64 `json:"avg_priority"`
+}
+
+func (r *TaskRepository) GetProjectStats(projectID int) (*ProjectStats, error) {
+	stats := &ProjectStats{}
+	err := r.db.QueryRow(`
+		SELECT 
+			COUNT(*),
+			COUNT(*) FILTER (WHERE status = 'todo'),
+			COUNT(*) FILTER (WHERE status = 'in_progress'),
+			COUNT(*) FILTER (WHERE status = 'done'),
+			COALESCE(SUM(duration_hours), 0),
+			COALESCE(AVG(priority_score), 0)
+		FROM tasks WHERE project_id = $1`, projectID).Scan(
+		&stats.Total, &stats.Todo, &stats.InProgress, &stats.Done,
+		&stats.TotalHours, &stats.AvgPriority)
+	return stats, err
+}
+
+func (r *TaskRepository) GetUserTasksCount(userID, projectID int) (int, error) {
+	var count int
+	err := r.db.QueryRow(`SELECT COUNT(*) FROM tasks WHERE assignee_id = $1 AND project_id = $2`, userID, projectID).Scan(&count)
+	return count, err
 }
 
 func (r *TaskRepository) GetDependenciesByProject(projectID int) ([]models.Dependency, error) {

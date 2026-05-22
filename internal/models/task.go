@@ -8,18 +8,21 @@ type Task struct {
 	UserID        int       `json:"user_id"`
 	AssigneeID    *int      `json:"assignee_id"`
 	Title         string    `json:"title"`
-	Description   string    `json:"description"` // <-- Вот эта строка была нужна!
+	Description   string    `json:"description"`
 	Status        string    `json:"status"`
 	Opt           int       `json:"opt"`
 	Real          int       `json:"real"`
 	Pess          int       `json:"pess"`
 	DurationHours float64   `json:"duration_hours"`
 	PriorityScore float64   `json:"priority_score"`
+	MilestoneID   *int      `json:"milestone_id"`
+	DeadlineAt    *int64    `json:"deadline_at"`
 	CreatedAt     time.Time `json:"created_at"`
 
 	// Эти поля заполняются динамически через сервис
-	CreatedByName string `json:"created_by_name"`
-	AssigneeName  string `json:"assignee_name"`
+	CreatedByName  string `json:"created_by_name"`
+	AssigneeName   string `json:"assignee_name"`
+	MilestoneTitle string `json:"milestone_title,omitempty"`
 }
 type GraphEdge struct {
 	From int `json:"from"`

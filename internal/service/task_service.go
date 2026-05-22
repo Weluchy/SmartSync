@@ -322,6 +322,18 @@ func (s *TaskService) GetTaskByID(id, userID int) (*models.Task, error) {
 	return s.repo.GetByID(id, userID)
 }
 
+func (s *TaskService) GetMilestones(projectID int) ([]models.Milestone, error) {
+	return s.repo.GetMilestones(projectID)
+}
+
+func (s *TaskService) CreateMilestone(projectID int, title string, deadline string) (*models.Milestone, error) {
+	return s.repo.CreateMilestone(projectID, title, deadline)
+}
+
+func (s *TaskService) GetProjectStats(projectID int) (*repository.ProjectStats, error) {
+	return s.repo.GetProjectStats(projectID)
+}
+
 func (s *TaskService) AddComment(taskID, userID int, text string) (*models.Comment, error) {
 	pid, err := s.repo.GetProjectIDByTask(taskID)
 	if err != nil {
