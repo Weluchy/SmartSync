@@ -172,30 +172,43 @@ export default function KanbanBoard({ projectId }) {
                     const isCritical = task.priority_score >= (maxScore * 0.8) && task.priority_score > 0 && task.status !== 'done';
                     return (
                       <div 
-                        key={task.id} draggable onDragStart={e => e.dataTransfer.setData('taskId', task.id)}
-                        onClick={() => { setEditingTask(task); setIsModalOpen(true); }}
-                        className="task-card bg-white p-4 rounded-2xl shadow-sm border-2 transition-all cursor-pointer group"
-                        style={{ borderColor: isCritical ? '#fecaca' : 'var(--border)' }}
-                      >
-                        <div className="flex justify-between items-start">
-                          <span className={`text-[10px] font-black uppercase ${isCritical ? 'text-red-500' : ''}`} style={{ color: isCritical ? '' : 'var(--text-muted)' }}>ID-{task.id}</span>
-                          <button onClick={e => deleteTask(e, task.id)} className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: 'var(--text-muted)' }}><Trash2 size={14} /></button>
-                        </div>
-                        <h4 className="text-sm font-bold mt-2" style={{ color: 'var(--text-primary)' }}>{task.title}</h4>
-                        <div className="flex items-center gap-2 mt-2">
-                          <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center text-[8px] text-white font-bold">
-                            {task.created_by_name?.charAt(0) || '?'}
-                          </div>
-                          <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{task.created_by_name || 'Загрузка...'}</span>
-                        </div>
-                        {task.assignee_id ? (
-                          <p className="text-[10px] font-medium mt-2 p-1.5 rounded w-fit" style={{ backgroundColor: 'var(--bg-card-hover)', color: 'var(--text-secondary)' }}>
-                            Исп: <span className="font-bold">{task.assignee_name}</span>
-                          </p>
-                        ) : (
-                          <p className="text-[10px] mt-2 italic" style={{ color: 'var(--text-muted)' }}>Не назначен</p>
-                        )}
-                      </div>
+  key={task.id} draggable onDragStart={e => e.dataTransfer.setData('taskId', task.id)}
+  onClick={() => { setEditingTask(task); setIsModalOpen(true); }}
+  className="task-card bg-white p-4 rounded-2xl shadow-sm border-2 transition-all cursor-pointer group"
+  style={{ borderColor: isCritical ? '#fecaca' : 'var(--border)' }}
+>
+  <div className="flex justify-between items-start">
+    <span className={`text-[10px] font-black uppercase ${isCritical ? 'text-red-500' : ''}`} style={{ color: isCritical ? '' : 'var(--text-muted)' }}>ID-{task.id}</span>
+    <button onClick={e => deleteTask(e, task.id)} className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: 'var(--text-muted)' }}><Trash2 size={14} /></button>
+  </div>
+  
+  <h4 className="text-sm font-bold mt-2" style={{ color: 'var(--text-primary)' }}>{task.title}</h4>
+  
+  {/* НОВЫЙ БЛОК: Превью описания */}
+  {task.description && (
+    <p className="text-[11px] mt-1.5 line-clamp-2" style={{ color: 'var(--text-muted)' }}>
+      {task.description.length > 60 ? `${task.description.substring(0, 60)}...` : task.description}
+    </p>
+  )}
+
+  {/* НОВЫЙ БЛОК: Часы */}
+  <div className="flex items-center justify-between mt-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+    <span className="text-[10px] font-bold" style={{ color: 'var(--text-secondary)' }}>
+      {task.duration_hours ? `${task.duration_hours.toFixed(1)} ч.` : '0 ч.'}
+    </span>
+    
+    <div className="flex items-center gap-1.5">
+      <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center text-[8px] text-white font-bold">
+        {task.created_by_name?.charAt(0) || '?'}
+      </div>
+      {task.assignee_id && (
+         <span className="text-[9px] font-bold bg-gray-100 px-1.5 py-0.5 rounded" style={{ color: 'var(--text-secondary)' }}>
+           {task.assignee_name?.split(' ')[0] || 'Исполнитель'}
+         </span>
+      )}
+    </div>
+  </div>
+</div>
                     );
                   })}
                 </div>
