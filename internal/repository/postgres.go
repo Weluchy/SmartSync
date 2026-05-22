@@ -72,10 +72,15 @@ func (r *TaskRepository) CreateTask(t *models.Task) (int, error) {
 		return 0, err
 	}
 	var id int
-	// ТОЧЕЧНЫЙ ФИКС: Добавили description
+	// ФИКС: Правильная проверка указателя
+	var assignee interface{} = nil
+	if t.AssigneeID != nil && *t.AssigneeID != 0 {
+		assignee = *t.AssigneeID
+	}
+
 	err := r.db.QueryRow(`INSERT INTO tasks (title, description, opt, real, pess, user_id, project_id, status, assignee_id) 
 		VALUES ($1, $2, $3, $4, $5, $6, $7, 'todo', $8) RETURNING id`,
-		t.Title, t.Description, t.Opt, t.Real, t.Pess, t.UserID, t.ProjectID, t.AssigneeID).Scan(&id)
+		t.Title, t.Description, t.Opt, t.Real, t.Pess, t.UserID, t.ProjectID, assignee).Scan(&id)
 	return id, err
 }
 
@@ -87,9 +92,15 @@ func (r *TaskRepository) UpdateTask(t *models.Task) error {
 	if _, err := r.CheckAccess(pid, t.UserID, models.RoleWeights[models.RoleEditor]); err != nil {
 		return err
 	}
-	// ТОЧЕЧНЫЙ ФИКС: Добавили description
+
+	// ФИКС: Правильная проверка указателя
+	var assignee interface{} = nil
+	if t.AssigneeID != nil && *t.AssigneeID != 0 {
+		assignee = *t.AssigneeID
+	}
+
 	_, err = r.db.Exec(`UPDATE tasks SET title = $1, description = $2, opt = $3, real = $4, pess = $5, assignee_id = $6 WHERE id = $7`,
-		t.Title, t.Description, t.Opt, t.Real, t.Pess, t.AssigneeID, t.ID)
+		t.Title, t.Description, t.Opt, t.Real, t.Pess, assignee, t.ID)
 	return err
 }
 
@@ -284,14 +295,18 @@ func (r *TaskRepository) AddComment(taskID, userID int, text string) (*models.Co
 }
 
 func (r *TaskRepository) GetComments(taskID int) ([]models.Comment, error) {
-	rows, err := r.db.Query(`
-		SELECT c.id, c.task_id, c.user_id, u.username, c.text, c.created_at 
-		FROM comments c JOIN users u ON c.user_id = u.id 
-		WHERE c.task_id = $1 ORDER BY c.created_at ASC`, taskID)
+	query := `
+		SELECT c.id, c.task_id, c.user_id, COALESCE(NULLIF(u.username, ''), 'Пользователь'), c.text, c.created_at 
+		FROM comments c 
+		LEFT JOIN users u ON c.user_id = u.id 
+		WHERE c.task_id = $1 ORDER BY c.created_at ASC`
+
+	rows, err := r.db.Query(query, taskID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+
 	var comments []models.Comment
 	for rows.Next() {
 		var c models.Comment

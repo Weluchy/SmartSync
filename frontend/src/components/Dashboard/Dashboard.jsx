@@ -70,6 +70,19 @@ export default function Dashboard({ projectId }) {
     { name: 'Низкий (<40)', value: stats.filter(t => t.priority_score < 40).length }
   ];
 
+  const handleAddMilestone = async () => {
+    const title = prompt("Введите название новой вехи (например, Спринт 1):");
+    if (!title) return;
+    try {
+      // Ставим дедлайн через 7 дней по умолчанию
+      const deadline = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
+      await api.post(`/projects/${projectId}/milestones`, { title, deadline });
+      loadData(); // Обновляем график
+    } catch (err) {
+      alert("Ошибка при создании: " + err.message);
+    }
+  };
+
   return (
     <div className="h-full w-full bg-gray-50 p-6 overflow-y-auto">
       <div className="max-w-6xl mx-auto space-y-6">
@@ -159,10 +172,15 @@ export default function Dashboard({ projectId }) {
 
         {/* Milestones / Спринты */}
         <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
-          <div className="p-6 border-b flex items-center gap-3">
-            <Target className="text-blue-600" size={20} />
-            <h3 className="font-bold text-gray-800">Вехи проекта (Milestones)</h3>
-          </div>
+          <div className="p-6 border-b flex items-center justify-between">
+  <div className="flex items-center gap-3">
+    <Target className="text-blue-600" size={20} />
+    <h3 className="font-bold text-gray-800">Вехи проекта (Milestones)</h3>
+  </div>
+  <button onClick={handleAddMilestone} className="text-[11px] font-bold bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg hover:bg-blue-100">
+    + ДОБАВИТЬ
+  </button>
+</div>
           <div className="p-6">
             {milestones.length > 0 ? (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">

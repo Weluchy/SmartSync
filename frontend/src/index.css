@@ -77,3 +77,6 @@ body {
 .dark .task-card:hover {
   box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
+
+
+[data-theme='dark'] { --bg-page: #121212; --bg-card: #1E1E1E; --text-primary: #FFFFFF; }

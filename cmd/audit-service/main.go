@@ -90,8 +90,14 @@ func main() {
 	})
 
 	r.GET("/user/audit", func(c *gin.Context) {
+		userIDStr := c.GetHeader("X-User-ID")
+		userIDInt, _ := strconv.Atoi(userIDStr)
+
+		// ФИКС: фильтруем историю только для текущего юзера
+		filter := bson.M{"$or": []bson.M{{"user_id": userIDStr}, {"user_id": userIDInt}}}
+
 		opts := options.Find().SetSort(bson.D{{Key: "timestamp", Value: -1}}).SetLimit(30)
-		cursor, err := collection.Find(context.TODO(), bson.M{}, opts)
+		cursor, err := collection.Find(context.TODO(), filter, opts)
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка БД"})
 			return
@@ -100,10 +106,9 @@ func main() {
 
 		var logs []bson.M
 		if err = cursor.All(context.TODO(), &logs); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка парсинга логов"})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка парсинга"})
 			return
 		}
-
 		if logs == nil {
 			logs = []bson.M{}
 		}

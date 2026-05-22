@@ -4,12 +4,14 @@ import (
 	"database/sql"
 	"log"
 	"os"
+	"strconv"
 	"time" // Добавили time
 
 	"smartsync/internal/auth/handler"
 	"smartsync/internal/auth/repository"
 	"smartsync/internal/auth/service"
 
+	"github.com/gin-gonic/gin"
 	_ "github.com/lib/pq"
 )
 
@@ -53,7 +55,26 @@ func main() {
 	httpHandler := handler.NewAuthHandler(authService)
 
 	router := httpHandler.InitRoutes()
-
+	// ФИКС: Эндпоинт для перевода ID в Имена для Истории
+	router.POST("/internal/users/bulk", func(c *gin.Context) {
+		var req struct {
+			IDs []int `json:"ids"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(400, gin.H{"error": "bad request"})
+			return
+		}
+		result := make(map[string]string)
+		for _, id := range req.IDs {
+			var username string
+			// Прямой запрос в БД для скорости
+			err := db.QueryRow("SELECT username FROM users WHERE id = $1", id).Scan(&username)
+			if err == nil {
+				result[strconv.Itoa(id)] = username
+			}
+		}
+		c.JSON(200, result)
+	})
 	log.Println("✅ Auth Service [JWT] запущен на порту 8081")
 	router.Run(":8081")
 }

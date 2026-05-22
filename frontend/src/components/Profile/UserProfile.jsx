@@ -9,52 +9,70 @@ export default function UserProfile() {
     stack: 'Go, PostgreSQL, Docker',
     status: 'Студент мехмата БГУ'
   });
-
+  const [userId, setUserId] = useState(null);
   const [auditLogs, setAuditLogs] = useState([]);
   const [userNames, setUserNames] = useState({});
-
+  
   const loadProfile = async () => {
     try {
       const data = await api.get('/user/profile');
-      if (data) setProfile(prev => ({ ...prev, ...data }));
+      if (data) {
+        setProfile(prev => ({ ...prev, ...data }));
+        // ФИКС (Пункт 6): Сохраняем ID из профиля, чтобы он не терялся
+        if (data.id) {
+          localStorage.setItem('userId', data.id);
+          setUserId(data.id);
+        }
+      }
     } catch (err) { console.error(err); }
   };
 
   const loadAuditLogs = async () => {
     try {
-      const logs = await api.get('/user/audit');
-      setAuditLogs(logs || []);
+        const logs = await api.get('/user/audit', {
+            headers: { 'X-User-ID': localStorage.getItem('userId') }
+        });
+        const fetchedLogs = logs || [];
+        setAuditLogs(fetchedLogs);
 
-      const userIds = [...new Set((logs || []).map(l => l.user_id).filter(Boolean))];
-      if (userIds.length > 0) {
-        const namesMap = await api.post('/internal/users/bulk', { ids: userIds });
-        if (namesMap) setUserNames(namesMap);
-      }
-    } catch (err) {
+        // ФИКС (Пункт 2): Безопасный сбор имен без bulk, который блокировался
+        const userIds = [...new Set(fetchedLogs.map(l => l.user_id).filter(Boolean))];
+        const namesMap = {};
+        for (const id of userIds) {
+          try {
+            const u = await api.get(`/users/${id}`);
+            if (u && u.username) namesMap[id] = u.username;
+          } catch (err) {
+
       console.error("Ошибка загрузки истории аудита:", err);
+
     }
+        }
+        setUserNames(namesMap);
+    } catch (err) { console.error(err); }
   };
 
-  useEffect(() => { 
+  useEffect(() => {
+    setUserId(localStorage.getItem('userId'));
     loadProfile(); 
     loadAuditLogs();
   }, []);
 
   const handleSave = async () => {
     try {
-      // ТОЧЕЧНЫЙ ФИКС: сохраняем profile, где теперь обновляется и username
       await api.put('/user/profile', profile);
       alert('Данные успешно обновлены!');
     } catch (err) { alert('Ошибка: ' + err.message); }
   };
 
+  // ФИКС (Пункт 3): Убрали bg-white, используем переменные темы (var(--bg-card))
   return (
-    <div className="h-full w-full bg-gray-50 p-6 overflow-y-auto">
+    <div className="h-full w-full p-6 overflow-y-auto" style={{ backgroundColor: 'var(--bg-page)', color: 'var(--text-primary)' }}>
       <div className="w-full max-w-4xl mx-auto space-y-6">
         
-        <div className="flex flex-col bg-white rounded-2xl shadow-xl border overflow-hidden">
-          <div className="h-[72px] px-8 border-b flex items-center justify-between bg-white">
-            <h3 className="font-bold text-gray-700 uppercase text-xs tracking-widest">Настройки профиля</h3>
+        <div className="flex flex-col rounded-2xl shadow-xl border overflow-hidden" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+          <div className="h-[72px] px-8 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
+            <h3 className="font-bold uppercase text-xs tracking-widest" style={{ color: 'var(--text-secondary)' }}>Настройки профиля</h3>
             <button onClick={handleSave} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-bold flex items-center gap-2 hover:bg-blue-700 transition-all">
               <Save size={14} /> СОХРАНИТЬ
             </button>
@@ -66,30 +84,32 @@ export default function UserProfile() {
                 <User size={40} />
               </div>
               <div>
-                {/* ТОЧЕЧНЫЙ ФИКС: Сделал username редактируемым полем, как и стек/статус */}
                 <input 
-                  className="text-xl font-bold text-gray-800 bg-transparent border-b border-dashed border-gray-300 focus:border-blue-500 outline-none mb-1 pb-1"
+                  className="text-xl font-bold bg-transparent border-b border-dashed outline-none mb-1 pb-1"
+                  style={{ color: 'var(--text-primary)', borderColor: 'var(--border-hover)' }}
                   value={profile.username}
                   placeholder="Ваше имя"
                   onChange={e => setProfile({...profile, username: e.target.value})}
                 />
-                <p className="text-sm text-gray-400">ID пользователя: {localStorage.getItem('userId') || '—'}</p>
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>ID пользователя: {userId || '—'}</p>
               </div>
             </div>
 
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-2">
-                <label className="text-[10px] font-bold text-gray-400 uppercase">Стек технологий</label>
+                <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Стек технологий</label>
                 <input 
-                  className="w-full p-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                  className="w-full p-3 border rounded-xl outline-none transition-all"
+                  style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-primary)', borderColor: 'var(--border)' }}
                   value={profile.stack}
                   onChange={e => setProfile({...profile, stack: e.target.value})}
                 />
               </div>
               <div className="space-y-2">
-                <label className="text-[10px] font-bold text-gray-400 uppercase">Статус / Вуз</label>
+                <label className="text-[10px] font-bold uppercase" style={{ color: 'var(--text-muted)' }}>Статус / Вуз</label>
                 <input 
-                  className="w-full p-3 bg-gray-50 border rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all"
+                  className="w-full p-3 border rounded-xl outline-none transition-all"
+                  style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-primary)', borderColor: 'var(--border)' }}
                   value={profile.status}
                   onChange={e => setProfile({...profile, status: e.target.value})}
                 />
@@ -98,19 +118,19 @@ export default function UserProfile() {
           </div>
         </div>
 
-        <div className="bg-white rounded-2xl shadow-xl border overflow-hidden">
-          <div className="h-[72px] px-8 border-b flex items-center gap-2 bg-white">
-            <History size={16} className="text-gray-500" />
-            <h3 className="font-bold text-gray-700 uppercase text-xs tracking-widest">История ваших действий (NoSQL Audit Stream)</h3>
+        <div className="rounded-2xl shadow-xl border overflow-hidden" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+          <div className="h-[72px] px-8 border-b flex items-center gap-2" style={{ borderColor: 'var(--border)' }}>
+            <History size={16} style={{ color: 'var(--text-muted)' }} />
+            <h3 className="font-bold uppercase text-xs tracking-widest" style={{ color: 'var(--text-secondary)' }}>История ваших действий</h3>
           </div>
           <div className="p-6">
             {auditLogs.length === 0 ? (
-              <p className="text-gray-400 text-xs text-center py-4">История действий пуста. Переместите задачи на доске, чтобы логи зафиксировались.</p>
+              <p className="text-xs text-center py-4" style={{ color: 'var(--text-muted)' }}>История действий пуста. Переместите задачи на доске.</p>
             ) : (
-              <div className="overflow-x-auto rounded-xl border border-gray-100">
+              <div className="overflow-x-auto rounded-xl border" style={{ borderColor: 'var(--border)' }}>
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="bg-gray-50 text-gray-400 font-bold uppercase border-b text-[10px]">
+                    <tr className="font-bold uppercase border-b text-[10px]" style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-muted)', borderColor: 'var(--border)' }}>
                       <th className="p-3">Время</th>
                       <th className="p-3">ID задачи</th>
                       <th className="p-3">Кто</th>
@@ -118,44 +138,25 @@ export default function UserProfile() {
                       <th className="p-3">Что изменилось</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y text-gray-600">
+                  <tbody className="divide-y" style={{ color: 'var(--text-secondary)', borderColor: 'var(--border)' }}>
                     {auditLogs.map((log, index) => {
                       const time = new Date(log.timestamp);
-                      const timeStr = time.toLocaleString('ru-RU', {
-                        hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'numeric', year: 'numeric'
-                      });
-
-                      const actionLabel = log.action === 'updated' ? 'Обновление' 
-                        : log.action === 'created' ? 'Создание' 
-                        : log.action === 'status_changed' ? 'Смена статуса' 
-                        : log.action;
-
-                      const userName = userNames[String(log.user_id)] || `ID ${log.user_id}`;
+                      const timeStr = time.toLocaleString('ru-RU', { hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'numeric', year: 'numeric' });
+                      const actionLabel = log.action === 'updated' ? 'Обновление' : log.action === 'created' ? 'Создание' : log.action === 'status_changed' ? 'Смена статуса' : log.action;
+                      const userName = userNames[log.user_id] || `ID ${log.user_id}`;
 
                       return (
-                      <tr key={index} className="hover:bg-gray-50/80 transition-all">
-                        <td className="p-3 whitespace-nowrap text-gray-400 text-[11px]">{timeStr}</td>
+                      <tr key={index} className="transition-all" style={{ backgroundColor: 'var(--bg-card)' }}>
+                        <td className="p-3 whitespace-nowrap text-[11px]" style={{ color: 'var(--text-muted)' }}>{timeStr}</td>
                         <td className="p-3 font-mono font-bold text-blue-600">#{log.task_id}</td>
-                        <td className="p-3 text-gray-700 font-medium">{userName}</td>
+                        <td className="p-3 font-medium" style={{ color: 'var(--text-primary)' }}>{userName}</td>
                         <td className="p-3 font-semibold">
-                          <span className={`px-2 py-0.5 rounded-md text-[10px] border ${
-                            log.action === 'created' ? 'bg-green-50 text-green-700 border-green-200' 
-                            : log.action === 'updated' ? 'bg-amber-50 text-amber-700 border-amber-200' 
-                            : 'bg-blue-50 text-blue-700 border-blue-200'
-                          }`}>
+                          <span className={`px-2 py-0.5 rounded-md text-[10px] border ${log.action === 'created' ? 'bg-green-500/10 text-green-500 border-green-500/20' : 'bg-blue-500/10 text-blue-500 border-blue-500/20'}`}>
                             {actionLabel}
                           </span>
                         </td>
-                        <td className="p-3 text-gray-600 max-w-xs">
-                          {log.summary ? (
-                            <span className="text-[11px] leading-tight block">{log.summary}</span>
-                          ) : log.changes && log.changes.length > 0 ? (
-                            <ul className="list-disc list-inside text-[11px] space-y-0.5">
-                              {log.changes.map((ch, ci) => <li key={ci}>{ch}</li>)}
-                            </ul>
-                          ) : (
-                            <span className="text-gray-400 italic text-[11px]">—</span>
-                          )}
+                        <td className="p-3 max-w-xs">
+                          {log.summary ? <span className="text-[11px] leading-tight block">{log.summary}</span> : <span className="italic text-[11px]" style={{ color: 'var(--text-muted)' }}>—</span>}
                         </td>
                       </tr>
                     )})}
