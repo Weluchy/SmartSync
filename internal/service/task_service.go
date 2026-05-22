@@ -66,6 +66,17 @@ func (s *TaskService) enrichTasks(tasks []models.Task) []models.Task {
 		ids = append(ids, id)
 	}
 
+	// ИСПРАВЛЕНИЕ 500 ОШИБКИ:
+	// Если массив ids пустой (например, задачи созданы удаленными юзерами),
+	// мы не делаем HTTP запрос вообще, а сразу отдаем заглушки.
+	if len(ids) == 0 {
+		for i := range tasks {
+			tasks[i].CreatedByName = "Неизвестный автор"
+			tasks[i].AssigneeName = "Не назначен"
+		}
+		return tasks
+	}
+
 	reqBody, _ := json.Marshal(map[string]interface{}{"ids": ids})
 	var names map[string]string
 
