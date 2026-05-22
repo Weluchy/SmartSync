@@ -97,7 +97,10 @@ const loadInvitations = useCallback(async () => {
         <MainLayout 
   projectName={currentProject?.name}
   activeView={activeView}
-  onSwitchView={setActiveView}
+  onSwitchView={(view) => {
+    setActiveView(view);
+    setViewUserId(null); // <-- Сбрасываем чужой профиль при навигации
+  }}
   onLogout={logout}
   tasks={[]}
 >

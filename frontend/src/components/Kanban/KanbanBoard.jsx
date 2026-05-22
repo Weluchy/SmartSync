@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../api/client';
 import { Plus, Trash2, Search, Filter, Clock } from 'lucide-react';
 import TaskModal from './TaskModal';
@@ -138,6 +138,7 @@ export default function KanbanBoard({ projectId, onTasksChange, onViewUser }) {
                 <div onDragOver={e => e.preventDefault()} onDrop={e => updateTaskStatus(e.dataTransfer.getData('taskId'), col.id)}
                   className="flex-1 rounded-2xl p-3 space-y-3 border-2 border-dashed border-transparent overflow-y-auto"
                   style={{ backgroundColor: col.color === 'bg-gray-100' ? 'var(--kanban-bg)' : col.color === 'bg-blue-50' ? 'rgba(59,130,246,0.05)' : 'rgba(34,197,94,0.05)' }}>
+                  <AnimatePresence>
                   {filteredTasks.filter(t => t.status === col.id).map(task => {
                     const isCritical = task.priority_score >= (maxScore * 0.8) && task.priority_score > 0 && task.status !== 'done';
                     // Дедлайн из PERT: created_at + duration_hours
@@ -190,6 +191,7 @@ export default function KanbanBoard({ projectId, onTasksChange, onViewUser }) {
                       </motion.div>
                     );
                   })}
+                  </AnimatePresence>
                 </div>
               </div>
             ))}

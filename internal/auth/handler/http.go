@@ -27,6 +27,7 @@ func (h *AuthHandler) InitRoutes() *gin.Engine {
 	// Добавляем маршрут, который ждет фронтенд
 	r.GET("/user/profile", h.getProfile)
 	r.PUT("/user/profile", h.updateProfile)
+	r.GET("/users/:id", h.getUserByID)
 
 	r.POST("/internal/users/bulk", h.getUsersBulk)
 
@@ -127,4 +128,24 @@ func parseID(idStr string) int {
 	var id int
 	fmt.Sscanf(idStr, "%d", &id)
 	return id
+}
+
+func (h *AuthHandler) getUserByID(c *gin.Context) {
+	idStr := c.Param("id")
+
+	// Метод GetProfileByID уже есть в твоем репо (используется для своего профиля)
+	user, err := h.service.Repo().GetProfileByID(parseID(idStr))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})
+		return
+	}
+
+	// Отдаем публичные данные (без паролей и токенов)
+	c.JSON(http.StatusOK, gin.H{
+		"id":        user.ID,
+		"username":  user.Username,
+		"full_name": user.FullName,
+		"stack":     user.Stack,
+		"status":    user.Status,
+	})
 }
