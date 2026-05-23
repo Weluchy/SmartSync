@@ -1,24 +1,12 @@
 package models
 
-type Task struct {
-	ID            int     `json:"id"`
-	Title         string  `json:"title"`
-	Opt           int     `json:"opt"`
-	Real          int     `json:"real"`
-	Pess          int     `json:"pess"`
-	DurationHours float64 `json:"duration_hours"`
-	PriorityScore float64 `json:"priority_score"`
-	UserID        int     `json:"user_id"`
-	ProjectID     int     `json:"project_id"`
-	Status        string  `json:"status"`
-}
+import "smartsync/internal/models"
 
-type GraphEdge struct {
-	From int `json:"from"`
-	To   int `json:"to"`
-}
+// Task - алиас на общую модель, чтобы не ломать существующий импорт
+type Task = models.Task
 
-type GraphData struct {
-	Nodes []Task      `json:"nodes"`
-	Edges []GraphEdge `json:"edges"`
-}
+// GraphEdge - алиас на общую модель
+type GraphEdge = models.GraphEdge
+
+// GraphData - алиас на общую модель
+type GraphData = models.GraphData

@@ -21,14 +21,14 @@ export default function KanbanBoard({ projectId, onTasksChange, onViewUser }) {
   const [members, setMembers] = useState([]);
 
   const loadTasks = useCallback(async () => {
-    if (!projectId) return;
-    try {
-      const data = await api.get(`/projects/${projectId}/tasks`);
-      setTasks(data || []);
-      if (onTasksChange) onTasksChange(data || []);
-    } catch (err) { console.error(err); }
-  }, [projectId, onTasksChange]);
-
+  if (!projectId) return;
+  try {
+    const data = await api.get(`/projects/${projectId}/tasks`);
+    console.log("ЗАГРУЖЕННЫЕ ЗАДАЧИ:", data); // <-- ДОБАВЬ ЭТО
+    setTasks(data || []);
+    if (onTasksChange) onTasksChange(data || []);
+  } catch (err) { console.error(err); }
+}, [projectId, onTasksChange]);
   const loadMembers = useCallback(async () => {
     if (!projectId) return;
     try {
@@ -154,25 +154,28 @@ export default function KanbanBoard({ projectId, onTasksChange, onViewUser }) {
                     const isCritical = task.priority_score >= (maxScore * 0.8) && task.priority_score > 0 && task.status !== 'done';
                     // Дедлайн из PERT: created_at + duration_hours
                     // Дедлайн из PERT: created_at + duration_hours
+// Дедлайн из PERT: created_at + duration_hours
 let deadlineStr = '';
 let exactDate = '';
-if (task.created_at && task.duration_hours > 0) {
-  const deadline = new Date(new Date(task.created_at).getTime() + task.duration_hours * 3600000);
-  exactDate = deadline.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-  
-  if (task.status === 'done') {
-    deadlineStr = 'Выполнено'; // ФИКС: Выполненные задачи не просрочены
-  } else {
-    const now = Date.now();
-    const diff = deadline.getTime() - now;
-    if (diff < 0) {
-      deadlineStr = 'Просрочено!';
+const createdDate = new Date(task.created_at);
+const isDateValid = createdDate.getFullYear() > 2000;
+
+if (isDateValid && task.duration_hours > 0) {
+    const deadline = new Date(createdDate.getTime() + (task.duration_hours * 3600000));
+    exactDate = deadline.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    
+    if (task.status === 'done') {
+        deadlineStr = 'Выполнено';
     } else {
-      const hoursLeft = Math.floor(diff / 3600000);
-      const minsLeft = Math.floor((diff % 3600000) / 60000);
-      deadlineStr = `Осталось ${hoursLeft}ч ${minsLeft}м`;
+        const diff = deadline.getTime() - Date.now();
+        if (diff < 0) {
+            deadlineStr = 'Просрочено!';
+        } else {
+            const hoursLeft = Math.floor(diff / 3600000);
+            const minsLeft = Math.floor((diff % 3600000) / 60000);
+            deadlineStr = `Осталось ${hoursLeft}ч ${minsLeft}м`;
+        }
     }
-  }
 }
                     return (
                       <motion.div key={task.id} layout initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.8 }} transition={{ duration: 0.2 }}
@@ -188,13 +191,21 @@ if (task.created_at && task.duration_hours > 0) {
                         <h4 className="text-sm font-bold mt-2" style={{ color: 'var(--text-primary)' }}>{task.title}</h4>
                         {task.description && <p className="text-[11px] mt-1.5 line-clamp-2" style={{ color: 'var(--text-muted)' }}>{task.description.length > 60 ? `${task.description.substring(0, 60)}...` : task.description}</p>}
                         
-                        {/* Deadline */}
-{deadlineStr && (
-  <div className="flex flex-col mt-2 text-[10px] font-bold" style={{ color: task.status === 'done' ? '#10b981' : (deadlineStr === 'Просрочено!' ? '#ef4444' : '#f59e0b') }}>
-    <div className="flex items-center gap-1"><Clock size={10} /> {deadlineStr}</div>
-    {exactDate && task.status !== 'done' && <div className="text-gray-400 font-normal mt-0.5" style={{ color: 'var(--text-muted)' }}>До: {exactDate}</div>}
+                       {/* Deadline */}
+{isDateValid ? (
+  <div className="flex flex-col mt-2 text-[10px] font-bold" 
+       style={{ color: task.status === 'done' ? '#10b981' : (deadlineStr === 'Просрочено!' ? '#ef4444' : '#f59e0b') }}>
+    <div className="flex items-center gap-1">
+        <Clock size={10} /> 
+        {task.duration_hours > 0 ? deadlineStr : "Без срока"}
+    </div>
+    {task.duration_hours > 0 && task.status !== 'done' && (
+        <div className="text-gray-400 font-normal mt-0.5" style={{ color: 'var(--text-muted)' }}>
+            До: {exactDate}
+        </div>
+    )}
   </div>
-)}
+) : null}
 
                         <div className="flex items-center justify-between mt-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
                           <span className="text-[10px] font-bold" style={{ color: 'var(--text-secondary)' }}>{task.duration_hours ? `${task.duration_hours.toFixed(1)} ч.` : '0 ч.'}</span>

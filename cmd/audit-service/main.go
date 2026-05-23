@@ -6,7 +6,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
+	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -39,7 +41,7 @@ func main() {
 	}
 	defer nc.Close()
 
-	nc.Subscribe("task.*", func(m *nats.Msg) {
+	nc.Subscribe("task.audit", func(m *nats.Msg) {
 		var event map[string]interface{}
 		if err := json.Unmarshal(m.Data, &event); err == nil {
 			event["timestamp"] = time.Now()
@@ -115,6 +117,28 @@ func main() {
 		c.JSON(http.StatusOK, logs)
 	})
 
-	log.Println("✅ Audit Service успешно запущен на порту 8083")
-	r.Run(":8083")
+	// Graceful shutdown
+	srv := &http.Server{
+		Addr:    ":8083",
+		Handler: r,
+	}
+
+	go func() {
+		log.Println("✅ Audit Service успешно запущен на порту 8083")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Ошибка Audit Service: %v", err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("Audit Service завершает работу...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	srv.Shutdown(ctx)
+	nc.Drain()
+	client.Disconnect(ctx)
+	log.Println("Audit Service остановлен")
 }

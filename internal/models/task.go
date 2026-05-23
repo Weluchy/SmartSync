@@ -2,6 +2,20 @@ package models
 
 import "time"
 
+// Константы статусов задач
+const (
+	StatusTodo       = "todo"
+	StatusInProgress = "in_progress"
+	StatusDone       = "done"
+)
+
+// ValidTaskStatuses — список допустимых статусов для валидации
+var ValidTaskStatuses = map[string]bool{
+	StatusTodo:       true,
+	StatusInProgress: true,
+	StatusDone:       true,
+}
+
 type Task struct {
 	ID            int       `json:"id"`
 	ProjectID     int       `json:"project_id"`

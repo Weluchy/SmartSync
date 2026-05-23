@@ -11,21 +11,6 @@ type ProjectRepository struct {
 }
 
 func NewProjectRepository(db *sql.DB) *ProjectRepository {
-	// Создаем таблицу проектов (если её нет)
-	db.Exec(`CREATE TABLE IF NOT EXISTS projects (
-		id SERIAL PRIMARY KEY,
-		name VARCHAR(255) NOT NULL,
-		owner_id INTEGER NOT NULL
-	)`)
-
-	// Создаем таблицу участников для совместного доступа (RBAC)
-	db.Exec(`CREATE TABLE IF NOT EXISTS project_members (
-		project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
-		user_id INTEGER NOT NULL,
-		role VARCHAR(50) NOT NULL DEFAULT 'viewer',
-		PRIMARY KEY (project_id, user_id)
-	)`)
-
 	return &ProjectRepository{db: db}
 }
 
@@ -172,6 +157,32 @@ func (r *ProjectRepository) GetProjectMembers(projectID int) ([]models.ProjectMe
 		members = append(members, m)
 	}
 	return members, nil
+}
+
+// GetInvitedProjects возвращает проекты, куда пользователь приглашён (роль != owner)
+func (r *ProjectRepository) GetInvitedProjects(userID int) ([]models.Project, error) {
+	query := `
+		SELECT p.id, p.name, p.owner_id, pm.role 
+		FROM projects p
+		JOIN project_members pm ON p.id = pm.project_id
+		WHERE pm.user_id = $1 AND pm.role != 'owner'
+	`
+	rows, err := r.db.Query(query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var projects []models.Project
+	for rows.Next() {
+		var p models.Project
+		rows.Scan(&p.ID, &p.Name, &p.OwnerID, &p.Role)
+		projects = append(projects, p)
+	}
+	if projects == nil {
+		projects = []models.Project{}
+	}
+	return projects, nil
 }
 
 // Удаление участника (с проверкой прав)

@@ -11,30 +11,8 @@ type TaskRepository struct {
 }
 
 func NewTaskRepository(db *sql.DB) *TaskRepository {
-	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS status VARCHAR(20) DEFAULT 'todo'`)
-	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS assignee_id INT REFERENCES users(id) ON DELETE SET NULL`)
-	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS description TEXT DEFAULT ''`)
-	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS milestone_id INT REFERENCES milestones(id) ON DELETE SET NULL`)
-	db.Exec(`ALTER TABLE tasks ADD COLUMN IF NOT EXISTS deadline_at BIGINT DEFAULT 0`)
-	db.Exec(`CREATE TABLE IF NOT EXISTS comments (
-		id SERIAL PRIMARY KEY,
-		task_id INTEGER REFERENCES tasks(id) ON DELETE CASCADE,
-		user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-		text TEXT NOT NULL,
-		created_at TIMESTAMP DEFAULT NOW()
-	)`)
-	db.Exec(`CREATE TABLE IF NOT EXISTS milestones (
-		id SERIAL PRIMARY KEY,
-		project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
-		title VARCHAR(255) NOT NULL,
-		description TEXT DEFAULT '',
-		deadline TIMESTAMP NOT NULL DEFAULT NOW(),
-		created_at TIMESTAMP DEFAULT NOW()
-	)`)
 	return &TaskRepository{db: db}
 }
-
-func (r *TaskRepository) DB() *sql.DB { return r.db }
 
 func (r *TaskRepository) CheckAccess(projectID, userID int, requiredWeight int) (string, error) {
 	var role string
@@ -78,8 +56,8 @@ func (r *TaskRepository) CreateTask(t *models.Task) (int, error) {
 		assignee = *t.AssigneeID
 	}
 
-	err := r.db.QueryRow(`INSERT INTO tasks (title, description, opt, real, pess, user_id, project_id, status, assignee_id) 
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'todo', $8) RETURNING id`,
+	err := r.db.QueryRow(`INSERT INTO tasks (title, description, opt, real, pess, user_id, project_id, status, assignee_id, created_at) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'todo', $8, NOW()) RETURNING id`,
 		t.Title, t.Description, t.Opt, t.Real, t.Pess, t.UserID, t.ProjectID, assignee).Scan(&id)
 	return id, err
 }
@@ -275,14 +253,6 @@ func (r *TaskRepository) GetDependenciesByProject(projectID int) ([]models.Depen
 		deps = append(deps, d)
 	}
 	return deps, nil
-}
-
-func (r *TaskRepository) GetByID(id, userID int) (*models.Task, error) {
-	var t models.Task
-	// ТОЧЕЧНЫЙ ФИКС: Добавили description
-	err := r.db.QueryRow("SELECT id, project_id, status, title, description FROM tasks WHERE id = $1 AND user_id = $2", id, userID).
-		Scan(&t.ID, &t.ProjectID, &t.Status, &t.Title, &t.Description)
-	return &t, err
 }
 
 func (r *TaskRepository) AddComment(taskID, userID int, text string) (*models.Comment, error) {

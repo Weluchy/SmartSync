@@ -4,14 +4,15 @@ import (
 	"database/sql"
 	"encoding/json"
 	"log"
-	"os" // Добавили для чтения переменных окружения
+	"os"
+	"os/signal"
+	"syscall"
 
 	"smartsync/internal/engine/repository"
 	"smartsync/internal/engine/service"
 
 	_ "github.com/lib/pq"
 	"github.com/nats-io/nats.go"
-	"github.com/redis/go-redis/v9"
 )
 
 // Функция для чтения переменных окружения из Docker
@@ -25,7 +26,6 @@ func getEnv(key, fallback string) string {
 func main() {
 	// 1. Читаем адреса из сети Docker (или берем локальные для тестов)
 	dbURL := getEnv("DATABASE_URL", "postgres://user:password@127.0.0.1:5433/smartsync?sslmode=disable")
-	redisAddr := getEnv("REDIS_ADDR", "127.0.0.1:6379")
 	natsURL := getEnv("NATS_URL", "nats://localhost:4222")
 
 	// 2. Подключение к Postgres
@@ -40,18 +40,16 @@ func main() {
 		log.Fatal("Priority Service: База данных недоступна: ", err)
 	}
 
-	// 3. Подключение к Redis и NATS
-	rdb := redis.NewClient(&redis.Options{Addr: redisAddr})
-
+	// 3. Подключение к NATS
 	nc, err := nats.Connect(natsURL)
 	if err != nil {
 		log.Fatal("Priority Service: Ошибка подключения к NATS: ", err)
 	}
 	defer nc.Close()
 
-	// 4. ТВОЯ ИНИЦИАЛИЗАЦИЯ (теперь с правильными переменными)
+	// 4. Инициализация
 	repo := repository.NewStorage(db)
-	calc := service.NewCalculator(repo, rdb)
+	calc := service.NewCalculator(repo)
 
 	// 5. ТВОЯ ЛОГИКА ПОДПИСКИ
 	nc.Subscribe("project.updated", func(m *nats.Msg) {
@@ -67,5 +65,12 @@ func main() {
 	})
 
 	log.Println("Математический движок запущен и слушает события...")
-	select {}
+
+	// Graceful shutdown
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("Priority Service завершает работу...")
+	nc.Drain()
+	log.Println("Priority Service остановлен")
 }

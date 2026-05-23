@@ -16,6 +16,9 @@ import (
 	"github.com/sony/gobreaker"
 )
 
+// Layout даты для валидации deadline в milestones
+const deadlineLayout = "2006-01-02T15:04:05Z07:00"
+
 type TaskService struct {
 	repo    *repository.TaskRepository
 	nc      *nats.Conn
@@ -45,6 +48,7 @@ func NewTaskService(repo *repository.TaskRepository, nc *nats.Conn, rdb *redis.C
 }
 
 func (s *TaskService) triggerMathEngine(projectID int) {
+	// Удаляем кэш, чтобы при следующем GET он перестроился с актуальными метриками из БД
 	s.redis.Del(context.Background(), fmt.Sprintf("smartsync:graph:project:%d", projectID))
 	s.nc.Publish("project.updated", []byte(fmt.Sprintf(`{"project_id": %d}`, projectID)))
 }
@@ -271,19 +275,28 @@ func (s *TaskService) GetGraph(ctx context.Context, projectID, userID int) (*mod
 	if err == nil {
 		var graph models.GraphData
 		if err := json.Unmarshal([]byte(val), &graph); err == nil {
-			graph.Nodes = s.enrichTasks(graph.Nodes) // ТОЧЕЧНЫЙ ФИКС: Обогащаем кэш
+			graph.Nodes = s.enrichTasks(graph.Nodes)
 			return &graph, true, nil
 		}
 	}
 
+	// Cache miss: читаем из БД и сохраняем в кэш с TTL
 	graph, err := s.repo.GetGraphData(projectID, userID)
 	if err == nil && graph != nil {
-		graph.Nodes = s.enrichTasks(graph.Nodes) // ТОЧЕЧНЫЙ ФИКС: Обогащаем БД
+		graph.Nodes = s.enrichTasks(graph.Nodes)
+		// Сохраняем кэш с TTL 1 час — priority-service больше его не затирает.
+		// При изменении графа triggerMathEngine удалит ключ, и кэш перестроится.
+		graphJSON, _ := json.Marshal(graph)
+		s.redis.Set(ctx, cacheKey, graphJSON, time.Hour)
 	}
 	return graph, false, err
 }
 
 func (s *TaskService) UpdateTaskStatus(taskID, userID int, status string) error {
+	if !models.ValidTaskStatuses[status] {
+		return fmt.Errorf("неверный статус: %s. Допустимые: todo, in_progress, done", status)
+	}
+
 	task, err := s.repo.GetByIDInternal(taskID)
 	if err != nil {
 		return fmt.Errorf("задача не найдена")
@@ -322,26 +335,53 @@ func (s *TaskService) GetTasksByProject(projectID, userID int) ([]models.Task, e
 	if err != nil || len(tasks) == 0 {
 		return tasks, err
 	}
-	return s.enrichTasks(tasks), nil // ТОЧЕЧНЫЙ ФИКС: Использована общая функция
+	return s.enrichTasks(tasks), nil
 }
 
 func (s *TaskService) GetDependenciesByProject(projectID int) ([]models.Dependency, error) {
 	return s.repo.GetDependenciesByProject(projectID)
 }
 
+// GetTaskByID — исправлено: теперь ищет задачу по ID, проверяя доступ через project_members, а не по user_id
 func (s *TaskService) GetTaskByID(id, userID int) (*models.Task, error) {
-	return s.repo.GetByID(id, userID)
+	task, err := s.repo.GetByIDInternal(id)
+	if err != nil {
+		return nil, err
+	}
+	// Проверяем доступ через project_members
+	if _, err := s.repo.CheckAccess(task.ProjectID, userID, models.RoleWeights[models.RoleViewer]); err != nil {
+		return nil, err
+	}
+	return task, nil
 }
 
-func (s *TaskService) GetMilestones(projectID int) ([]models.Milestone, error) {
+func (s *TaskService) GetMilestones(projectID, userID int) ([]models.Milestone, error) {
+	if _, err := s.repo.CheckAccess(projectID, userID, models.RoleWeights[models.RoleViewer]); err != nil {
+		return nil, err
+	}
 	return s.repo.GetMilestones(projectID)
 }
 
-func (s *TaskService) CreateMilestone(projectID int, title string, deadline string) (*models.Milestone, error) {
+func (s *TaskService) CreateMilestone(projectID, userID int, title string, deadline string) (*models.Milestone, error) {
+	if _, err := s.repo.CheckAccess(projectID, userID, models.RoleWeights[models.RoleEditor]); err != nil {
+		return nil, err
+	}
+	// Валидация формата даты
+	_, err := time.Parse(deadlineLayout, deadline)
+	if err != nil {
+		// Пробуем ещё ISO date без времени
+		_, err2 := time.Parse("2006-01-02", deadline)
+		if err2 != nil {
+			return nil, fmt.Errorf("неверный формат даты. Используйте YYYY-MM-DD или ISO 8601")
+		}
+	}
 	return s.repo.CreateMilestone(projectID, title, deadline)
 }
 
-func (s *TaskService) GetProjectStats(projectID int) (*repository.ProjectStats, error) {
+func (s *TaskService) GetProjectStats(projectID, userID int) (*repository.ProjectStats, error) {
+	if _, err := s.repo.CheckAccess(projectID, userID, models.RoleWeights[models.RoleViewer]); err != nil {
+		return nil, err
+	}
 	return s.repo.GetProjectStats(projectID)
 }
 

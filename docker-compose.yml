@@ -79,6 +79,7 @@ services:
       - audit-service
     restart: unless-stopped
     environment:
+      - JWT_SECRET=smartsync_diploma_secret_key_2026
       - NATS_URL=nats://nats:4222
       - AUTH_SERVICE_URL=http://auth-service:8081
       - TASK_SERVICE_URL=http://task-service:8080
@@ -97,6 +98,7 @@ services:
       - postgres
     restart: unless-stopped
     environment:
+      - JWT_SECRET=smartsync_diploma_secret_key_2026
       - DATABASE_URL=postgres://user:password@postgres:5432/smartsync?sslmode=disable
 
   task-service:
@@ -113,6 +115,7 @@ services:
       - redis
     restart: unless-stopped
     environment:
+      - JWT_SECRET=smartsync_diploma_secret_key_2026
       - NATS_URL=nats://nats:4222
       - REDIS_ADDR=redis:6379
       - DATABASE_URL=postgres://user:password@postgres:5432/smartsync?sslmode=disable

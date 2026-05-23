@@ -3,6 +3,8 @@ import PropTypes from 'prop-types';
 import { Network } from 'vis-network/standalone';
 import { api } from '../../api/client';
 
+const POSITIONS_KEY_PREFIX = 'smartsync_graph_positions_';
+
 export default function TaskGraph({ projectId }) {
   const containerRef = useRef(null);
   const networkRef = useRef(null);
@@ -36,6 +38,28 @@ export default function TaskGraph({ projectId }) {
     }
     return false;
   };
+
+  // Сохранение позиций узлов в localStorage
+  const savePositions = useCallback(() => {
+    if (!networkRef.current || !projectId) return;
+    const positions = networkRef.current.getPositions();
+    try {
+      localStorage.setItem(POSITIONS_KEY_PREFIX + projectId, JSON.stringify(positions));
+    } catch (e) {
+      // localStorage может быть недоступен
+    }
+  }, [projectId]);
+
+  // Восстановление позиций из localStorage
+  const loadSavedPositions = useCallback(() => {
+    if (!projectId) return null;
+    try {
+      const saved = localStorage.getItem(POSITIONS_KEY_PREFIX + projectId);
+      return saved ? JSON.parse(saved) : null;
+    } catch (e) {
+      return null;
+    }
+  }, [projectId]);
 
   const loadGraphData = useCallback(async () => {
     if (!projectId || !containerRef.current) return;
@@ -73,6 +97,9 @@ export default function TaskGraph({ projectId }) {
         });
       }
 
+      // Восстанавливаем сохранённые позиции узлов
+      const savedPositions = loadSavedPositions();
+      
       const nodes = tasks.map(t => {
         const score = t.priority_score !== undefined ? t.priority_score : t.PriorityScore || 0;
         const isDone = t.status === 'done';
@@ -84,8 +111,7 @@ export default function TaskGraph({ projectId }) {
         else if (isCritical) { bg = '#fee2e2'; border = '#ef4444'; text = '#991b1b'; }
         else if (isInProgress) { bg = '#dbeafe'; border = '#2563eb'; text = '#1e3a8a'; }
 
-        // ТОЧЕЧНЫЙ ФИКС: Выводим имена исполнителей и описание (в title)
-        return {
+        const node = {
           id: t.id,
           label: `[${t.id}] ${t.title}\nИсп: ${t.assignee_name || 'Нет'}\n${score.toFixed(1)}ч`,
           title: `Автор: ${t.created_by_name || 'Неизвестно'}\nИсполнитель: ${t.assignee_name || 'Не назначен'}\nСтатус: ${t.status}\n\nОписание:\n${t.description || 'Нет описания'}`,
@@ -96,6 +122,15 @@ export default function TaskGraph({ projectId }) {
           borderWidth: 2,
           shadow: isCritical ? { enabled: true, color: 'rgba(239, 68, 68, 0.2)', size: 10 } : false
         };
+
+        // Если есть сохранённые позиции — применяем их
+        if (savedPositions && savedPositions[t.id]) {
+          node.x = savedPositions[t.id].x;
+          node.y = savedPositions[t.id].y;
+          node.fixed = false; // можно будет двигать
+        }
+
+        return node;
       });
 
       const edges = dependencies.map(d => ({
@@ -108,11 +143,52 @@ export default function TaskGraph({ projectId }) {
       }));
 
       if (networkRef.current) networkRef.current.destroy();
+
+      // Создаём сеть с отключённой физикой, без hierarchical
       networkRef.current = new Network(containerRef.current, { nodes, edges }, {
-        physics: { enabled: false },
-        layout: { hierarchical: { enabled: true, direction: 'LR', sortMethod: 'directed', levelSeparation: 200 } },
-        interaction: { multiselect: true, hover: true }
+        physics: {
+          enabled: !savedPositions, // включаем физику только если нет сохранённых позиций
+          solver: 'forceAtlas2Based',
+          forceAtlas2Based: {
+            gravitationalConstant: -40,
+            centralGravity: 0.005,
+            springLength: 200,
+            springConstant: 0.02,
+            damping: 0.4
+          },
+          stabilization: {
+            iterations: 100,
+            updateInterval: 25,
+            onlyDynamicEdges: false
+          }
+        },
+        layout: {
+          hierarchical: { enabled: false } // отключаем иерархию!
+        },
+        interaction: {
+          multiselect: true,
+          hover: true,
+          dragNodes: true // разрешаем перетаскивание
+        },
+        nodes: {
+          physics: true
+        }
       });
+
+      // После стабилизации физики отключаем её, чтобы узлы застыли
+      if (!savedPositions) {
+        networkRef.current.once('stabilizationIterationsDone', () => {
+          networkRef.current.setOptions({ physics: { enabled: false } });
+          // Сохраняем позиции после авто-расположения
+          setTimeout(savePositions, 500);
+        });
+      }
+
+      // Сохраняем позиции при перемещении узла пользователем
+      networkRef.current.on('dragEnd', savePositions);
+
+      // При клике на пустое место тоже сохраняем (пользователь мог подвинуть)
+      networkRef.current.on('release', savePositions);
 
       networkRef.current.once("afterDrawing", () => networkRef.current.fit());
 
@@ -145,27 +221,41 @@ export default function TaskGraph({ projectId }) {
         }
       });
     } catch (err) { console.error(err); }
-  }, [projectId]);
+  }, [projectId, loadSavedPositions, savePositions]);
 
   useEffect(() => {
-  loadGraphData();
-  const interval = setInterval(() => {
     loadGraphData();
-  }, 15000);
+    const interval = setInterval(() => {
+      loadGraphData();
+    }, 15000);
 
-  return () => {
-    clearInterval(interval);
+    return () => {
+      clearInterval(interval);
+      if (networkRef.current) networkRef.current.destroy();
+    };
+  }, [loadGraphData]);
+
+  // Кнопка "Сбросить расположение"
+  const resetLayout = () => {
+    if (projectId) {
+      localStorage.removeItem(POSITIONS_KEY_PREFIX + projectId);
+    }
     if (networkRef.current) networkRef.current.destroy();
+    loadGraphData();
   };
-}, [loadGraphData]);
 
   return (
     <div className="h-full w-full bg-gray-50 p-6 overflow-hidden">
       <div className="w-full h-full flex flex-col bg-white rounded-2xl shadow-xl border overflow-hidden transition-all">
         <div className="h-[72px] min-h-[72px] px-8 border-b flex justify-between items-center bg-white z-10">
-          <div>
-            <h3 className="font-bold text-gray-700 uppercase text-xs tracking-widest">Сетевой график</h3>
-            <p className="text-[10px] text-gray-400">Зеленый = Готово | Красный = Критический путь</p>
+          <div className="flex items-center gap-4">
+            <div>
+              <h3 className="font-bold text-gray-700 uppercase text-xs tracking-widest">Сетевой график</h3>
+              <p className="text-[10px] text-gray-400">Зеленый = Готово | Красный = Критический путь</p>
+            </div>
+            <button onClick={resetLayout} className="text-[10px] font-bold bg-gray-500 text-white px-3 py-1.5 rounded-xl hover:bg-gray-600 transition-all shadow">
+              СБРОСИТЬ ПОЗИЦИИ
+            </button>
           </div>
           <button onClick={loadGraphData} className="text-xs font-bold bg-blue-600 text-white px-6 py-2.5 rounded-xl hover:bg-blue-700 transition-all shadow-md">
             ОБНОВИТЬ ГРАФ

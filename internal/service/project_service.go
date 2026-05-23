@@ -45,3 +45,7 @@ func (s *ProjectService) RemoveMember(projectID, ownerID, targetUserID int) erro
 func (s *ProjectService) UpdateMemberRole(projectID, ownerID, targetUserID int, newRole string) error {
 	return s.repo.UpdateMemberRole(projectID, ownerID, targetUserID, newRole)
 }
+
+func (s *ProjectService) GetInvitedProjects(userID int) ([]models.Project, error) {
+	return s.repo.GetInvitedProjects(userID)
+}

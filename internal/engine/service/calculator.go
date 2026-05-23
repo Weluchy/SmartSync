@@ -1,21 +1,15 @@
 package service
 
 import (
-	"context"
-	"encoding/json"
-	"fmt"
 	"smartsync/internal/engine/repository"
-
-	"github.com/redis/go-redis/v9"
 )
 
 type Calculator struct {
-	repo  *repository.Storage
-	redis *redis.Client
+	repo *repository.Storage
 }
 
-func NewCalculator(repo *repository.Storage, rdb *redis.Client) *Calculator {
-	return &Calculator{repo: repo, redis: rdb}
+func NewCalculator(repo *repository.Storage) *Calculator {
+	return &Calculator{repo: repo}
 }
 
 func (c *Calculator) RecalculateGraph(projectID int) {
@@ -46,7 +40,6 @@ func (c *Calculator) RecalculateGraph(projectID int) {
 		adj[e.From] = append(adj[e.From], e.To)
 		inDegree[e.To]++
 	}
-
 	// 3. Топологическая сортировка (учитывает несколько входящих связей)
 	var queue []int
 	for _, t := range tasks {
@@ -54,34 +47,23 @@ func (c *Calculator) RecalculateGraph(projectID int) {
 			queue = append(queue, t.ID)
 		}
 	}
-
 	for len(queue) > 0 {
 		curr := queue[0]
 		queue = queue[1:]
-
 		for _, child := range adj[curr] {
-			// БЕРЕМ МАКСИМАЛЬНЫЙ ПУТЬ: если путь через текущего родителя дольше, обновляем вес ребенка
+			// если путь через текущего родителя дольше обновляем  ребенка
 			if earlyFinish[curr]+durations[child] > earlyFinish[child] {
 				earlyFinish[child] = earlyFinish[curr] + durations[child]
 			}
-
 			inDegree[child]--
 			if inDegree[child] == 0 {
 				queue = append(queue, child)
 			}
 		}
 	}
-
 	// 4. Сохранение метрик
 	for _, t := range tasks {
 		c.repo.UpdateTaskMetrics(t.ID, durations[t.ID], earlyFinish[t.ID])
 	}
 
-	// 5. Обновление кэша (чтобы фронт получил новые данные)
-	graph, err := c.repo.GetFullGraph(projectID)
-	if err == nil {
-		cacheKey := fmt.Sprintf("smartsync:graph:project:%d", projectID)
-		graphJSON, _ := json.Marshal(graph)
-		c.redis.Set(context.Background(), cacheKey, graphJSON, 0)
-	}
 }

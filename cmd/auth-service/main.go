@@ -1,10 +1,14 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"log"
+	"net/http"
 	"os"
-	"time" // Добавили time
+	"os/signal"
+	"syscall"
+	"time"
 
 	"smartsync/internal/auth/handler"
 	"smartsync/internal/auth/repository"
@@ -23,7 +27,7 @@ func getEnv(key, fallback string) string {
 func main() {
 	dbURL := getEnv("DATABASE_URL", "postgres://user:password@127.0.0.1:5433/smartsync?sslmode=disable")
 
-	var db *sql.DB // Изменили способ инициализации переменной
+	var db *sql.DB
 	var err error
 
 	db, err = sql.Open("postgres", dbURL)
@@ -32,7 +36,7 @@ func main() {
 	}
 	defer db.Close()
 
-	// ИССЛЕДОВАНИЕ: Цикл ожидания базы данных (Retry Pattern)
+	// Retry Pattern: цикл ожидания базы данных
 	maxRetries := 5
 	for i := 0; i < maxRetries; i++ {
 		err = db.Ping()
@@ -54,6 +58,26 @@ func main() {
 
 	router := httpHandler.InitRoutes()
 
-	log.Println("✅ Auth Service [JWT] запущен на порту 8081")
-	router.Run(":8081")
+	// Graceful shutdown
+	srv := &http.Server{
+		Addr:    ":8081",
+		Handler: router,
+	}
+
+	go func() {
+		log.Println("✅ Auth Service [JWT] запущен на порту 8081")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Ошибка Auth Service: %v", err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("Auth Service завершает работу...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	srv.Shutdown(ctx)
+	log.Println("Auth Service остановлен")
 }

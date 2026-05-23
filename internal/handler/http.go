@@ -30,6 +30,7 @@ func (h *Handler) InitRoutes() *gin.Engine {
 	protected.Use(AuthMiddleware())
 	{
 		protected.POST("/tasks", h.createTask)
+		protected.GET("/tasks/:id", h.getTask)
 		protected.PUT("/tasks/:id", h.updateTask)
 		protected.DELETE("/tasks/:id", h.deleteTask)
 		protected.PATCH("/tasks/:id/status", h.updateTaskStatus)
@@ -61,6 +62,22 @@ func (h *Handler) InitRoutes() *gin.Engine {
 // @Failure 401 {object} map[string]string
 // @Security bearerAuth
 // @Router /tasks [post]
+func (h *Handler) getTask(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	taskID, _ := strconv.Atoi(c.Param("id"))
+
+	task, err := h.service.GetTaskByID(taskID, userID)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Задача не найдена"})
+		return
+	}
+	c.JSON(http.StatusOK, task)
+}
+
 func (h *Handler) createTask(c *gin.Context) {
 	userID, err := getUserID(c)
 	if err != nil {
@@ -332,5 +349,18 @@ func getUserID(c *gin.Context) (int, error) {
 }
 
 func (h *Handler) getMyInvitations(c *gin.Context) {
-	c.JSON(http.StatusOK, []interface{}{})
+	userID, err := getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	invites, err := h.projectService.GetInvitedProjects(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка загрузки приглашений"})
+		return
+	}
+	if invites == nil {
+		invites = []models.Project{}
+	}
+	c.JSON(http.StatusOK, invites)
 }

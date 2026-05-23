@@ -1,14 +1,18 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"os/signal"
 	"strings"
-	"time" // Добавили
+	"sync"
+	"syscall"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
@@ -17,10 +21,61 @@ import (
 	"github.com/sony/gobreaker" // Добавили библиотеку предохранителя
 )
 
-var jwtSecret = []byte("smartsync_diploma_secret_key_2026")
+// Rate limiter: не более 100 запросов в секунду с одного IP
+type ipRateLimiter struct {
+	visitors sync.Map
+	limit    int
+	window   time.Duration
+}
+
+type visitor struct {
+	count    int
+	lastSeen time.Time
+}
+
+func newRateLimiter(limit int, window time.Duration) *ipRateLimiter {
+	rl := &ipRateLimiter{
+		limit:  limit,
+		window: window,
+	}
+	// Фоновая горутина для очистки старых записей каждые 10 минут
+	go func() {
+		for {
+			time.Sleep(10 * time.Minute)
+			rl.visitors.Range(func(key, value interface{}) bool {
+				v := value.(*visitor)
+				if time.Since(v.lastSeen) > rl.window {
+					rl.visitors.Delete(key)
+				}
+				return true
+			})
+		}
+	}()
+	return rl
+}
+
+func (rl *ipRateLimiter) allow(ip string) bool {
+	val, _ := rl.visitors.LoadOrStore(ip, &visitor{})
+	v := val.(*visitor)
+	v.lastSeen = time.Now()
+	v.count++
+	if v.count > rl.limit {
+		return false
+	}
+	// Сбрасываем счётчик по истечении окна
+	time.AfterFunc(rl.window, func() {
+		v.count--
+	})
+	return true
+}
+
+var rateLimiter = newRateLimiter(100, 1*time.Second)
+
+var jwtSecret []byte
 var cb *gobreaker.CircuitBreaker
 
 func init() {
+	jwtSecret = []byte("smartsync_diploma_secret_key_2026")
 	// Настройки предохранителя
 	st := gobreaker.Settings{
 		Name:        "Microservices-Gateway-CB",
@@ -44,9 +99,21 @@ var upgrader = websocket.Upgrader{
 }
 
 func main() {
+	// JWT секрет из переменной окружения (может быть переопределён)
+	if envSecret := os.Getenv("JWT_SECRET"); envSecret != "" {
+		jwtSecret = []byte(envSecret)
+	}
+
 	r := gin.Default()
 
 	r.Use(func(c *gin.Context) {
+		// Rate limiting по IP
+		ip := c.ClientIP()
+		if !rateLimiter.allow(ip) {
+			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "Слишком много запросов. Попробуйте позже."})
+			return
+		}
+
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE, PUT, PATCH")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
@@ -125,6 +192,7 @@ func main() {
 	protected.Use(authMiddleware())
 	{
 		protected.POST("/tasks", taskProxy)
+		protected.GET("/tasks/:id", taskProxy)
 		protected.PUT("/tasks/:id", taskProxy)
 		protected.DELETE("/tasks/:id", taskProxy)
 		protected.POST("/tasks/:id/dependencies", taskProxy)
@@ -160,8 +228,33 @@ func main() {
 		protected.POST("/projects/:project_id/milestones", taskProxy)
 	}
 
-	log.Println("API Gateway запущен на порту 8000")
-	r.Run(":8000")
+	// Graceful shutdown
+	srv := &http.Server{
+		Addr:    ":8000",
+		Handler: r,
+	}
+
+	go func() {
+		log.Println("API Gateway запущен на порту 8000")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Ошибка Gateway: %v", err)
+		}
+	}()
+
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("Gateway завершает работу...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := srv.Shutdown(ctx); err != nil {
+		log.Fatalf("Ошибка при остановке Gateway: %v", err)
+	}
+	if nc != nil {
+		nc.Drain()
+	}
+	log.Println("Gateway остановлен")
 }
 
 func getEnv(key, fallback string) string {

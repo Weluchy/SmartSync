@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"os"
 	"time"
 
 	"smartsync/internal/auth/models"
@@ -11,21 +12,22 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// В реальных проектах ключ лежит в .env, для диплома оставим здесь
-var jwtSecret = []byte("smartsync_diploma_secret_key_2026")
-
 type AuthService struct {
-	repo *repository.AuthRepository
+	repo      *repository.AuthRepository
+	jwtSecret []byte
 }
 
 func (s *AuthService) Repo() *repository.AuthRepository { return s.repo }
 
 func NewAuthService(repo *repository.AuthRepository) *AuthService {
-	return &AuthService{repo: repo}
+	secret := []byte("smartsync_diploma_secret_key_2026")
+	if envSecret := os.Getenv("JWT_SECRET"); envSecret != "" {
+		secret = []byte(envSecret)
+	}
+	return &AuthService{repo: repo, jwtSecret: secret}
 }
 
 func (s *AuthService) Register(req models.AuthRequest) (int, error) {
-	// Хешируем пароль (cost=10 - баланс между скоростью и безопасностью)
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), 10)
 	if err != nil {
 		return 0, err
@@ -39,17 +41,15 @@ func (s *AuthService) Login(req models.AuthRequest) (string, error) {
 		return "", errors.New("пользователь не найден")
 	}
 
-	// Сравниваем хеши
 	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); err != nil {
 		return "", errors.New("неверный пароль")
 	}
 
-	// Генерируем JWT токен
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
 		"user_id":  user.ID,
 		"username": user.Username,
-		"exp":      time.Now().Add(time.Hour * 24).Unix(), // Токен живет 24 часа
+		"exp":      time.Now().Add(time.Hour * 24).Unix(),
 	})
 
-	return token.SignedString(jwtSecret)
+	return token.SignedString(s.jwtSecret)
 }

@@ -13,15 +13,6 @@ type AuthRepository struct {
 }
 
 func NewAuthRepository(db *sql.DB) *AuthRepository {
-	db.Exec(`CREATE TABLE IF NOT EXISTS users (
-		id SERIAL PRIMARY KEY,
-		username VARCHAR(50) UNIQUE NOT NULL,
-		password_hash VARCHAR(255) NOT NULL,
-		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-	)`)
-	db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS full_name VARCHAR(100) DEFAULT ''`)
-	db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS stack VARCHAR(255) DEFAULT ''`)
-	db.Exec(`ALTER TABLE users ADD COLUMN IF NOT EXISTS status VARCHAR(100) DEFAULT ''`)
 	return &AuthRepository{db: db}
 }
 

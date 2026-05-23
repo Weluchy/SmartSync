@@ -3,11 +3,21 @@ package handler
 import (
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 )
+
+var jwtSecret []byte
+
+func init() {
+	jwtSecret = []byte("smartsync_diploma_secret_key_2026")
+	if envSecret := os.Getenv("JWT_SECRET"); envSecret != "" {
+		jwtSecret = []byte(envSecret)
+	}
+}
 
 // AuthMiddleware проверяет наличие и валидность JWT токена
 func AuthMiddleware() gin.HandlerFunc {
@@ -26,7 +36,7 @@ func AuthMiddleware() gin.HandlerFunc {
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, fmt.Errorf("неожиданный метод подписи: %v", token.Header["alg"])
 			}
-			return []byte("smartsync_diploma_secret_key_2026"), nil
+			return jwtSecret, nil
 		})
 
 		if err != nil || !token.Valid {
