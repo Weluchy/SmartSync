@@ -78,8 +78,8 @@ func (r *TaskRepository) CreateTask(t *models.Task) (int, error) {
 		assignee = *t.AssigneeID
 	}
 
-	err := r.db.QueryRow(`INSERT INTO tasks (title, description, opt, real, pess, user_id, project_id, status, assignee_id) 
-		VALUES ($1, $2, $3, $4, $5, $6, $7, 'todo', $8) RETURNING id`,
+	err := r.db.QueryRow(`INSERT INTO tasks (title, description, opt, real, pess, user_id, project_id, status, assignee_id, created_at) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'todo', $8, NOW()) RETURNING id`,
 		t.Title, t.Description, t.Opt, t.Real, t.Pess, t.UserID, t.ProjectID, assignee).Scan(&id)
 	return id, err
 }
