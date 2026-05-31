@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -18,33 +19,33 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/gorilla/websocket"
 	"github.com/nats-io/nats.go"
-	"github.com/sony/gobreaker" // Добавили библиотеку предохранителя
+	"github.com/sony/gobreaker"
 )
 
 // Rate limiter: не более 100 запросов в секунду с одного IP
 type ipRateLimiter struct {
 	visitors sync.Map
-	limit    int
+	limit    int64
 	window   time.Duration
+	mu       sync.Mutex
 }
 
 type visitor struct {
-	count    int
+	count    int64
 	lastSeen time.Time
 }
 
 func newRateLimiter(limit int, window time.Duration) *ipRateLimiter {
 	rl := &ipRateLimiter{
-		limit:  limit,
+		limit:  int64(limit),
 		window: window,
 	}
-	// Фоновая горутина для очистки старых записей каждые 10 минут
 	go func() {
 		for {
-			time.Sleep(10 * time.Minute)
+			time.Sleep(5 * time.Minute)
 			rl.visitors.Range(func(key, value interface{}) bool {
 				v := value.(*visitor)
-				if time.Since(v.lastSeen) > rl.window {
+				if time.Since(v.lastSeen) > rl.window*2 {
 					rl.visitors.Delete(key)
 				}
 				return true
@@ -58,14 +59,22 @@ func (rl *ipRateLimiter) allow(ip string) bool {
 	val, _ := rl.visitors.LoadOrStore(ip, &visitor{})
 	v := val.(*visitor)
 	v.lastSeen = time.Now()
-	v.count++
-	if v.count > rl.limit {
+
+	// атомарно увеличиваем счётчик
+	newCount := atomic.AddInt64(&v.count, 1)
+
+	// если превысили — блокируем
+	if newCount > rl.limit {
 		return false
 	}
-	// Сбрасываем счётчик по истечении окна
-	time.AfterFunc(rl.window, func() {
-		v.count--
-	})
+
+	// Если это первый запрос в окне, запускаем таймер сброса
+	if newCount == 1 {
+		go func() {
+			time.Sleep(rl.window)
+			atomic.AddInt64(&v.count, -newCount) // сбрасываем накопленное
+		}()
+	}
 	return true
 }
 
@@ -226,6 +235,7 @@ func main() {
 		protected.GET("/projects/:project_id/stats", taskProxy)
 		protected.GET("/projects/:project_id/milestones", taskProxy)
 		protected.POST("/projects/:project_id/milestones", taskProxy)
+		protected.DELETE("/projects/:project_id/milestones/:milestone_id", taskProxy)
 	}
 
 	// Graceful shutdown

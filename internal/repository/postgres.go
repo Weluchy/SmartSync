@@ -264,6 +264,11 @@ func (r *TaskRepository) AddComment(taskID, userID int, text string) (*models.Co
 	return &c, err
 }
 
+func (r *TaskRepository) DeleteMilestone(projectID, milestoneID int) error {
+	_, err := r.db.Exec("DELETE FROM milestones WHERE id = $1 AND project_id = $2", milestoneID, projectID)
+	return err
+}
+
 func (r *TaskRepository) GetComments(taskID int) ([]models.Comment, error) {
 	query := `
 		SELECT c.id, c.task_id, c.user_id, COALESCE(NULLIF(u.username, ''), 'Пользователь'), c.text, c.created_at 

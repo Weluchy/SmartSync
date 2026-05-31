@@ -26,6 +26,22 @@ func (h *Handler) getMilestones(c *gin.Context) {
 	c.JSON(http.StatusOK, ms)
 }
 
+func (h *Handler) deleteMilestone(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
+	milestoneID, _ := strconv.Atoi(c.Param("milestone_id"))
+
+	if err := h.service.DeleteMilestone(projectID, milestoneID, userID); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Веха удалена"})
+}
+
 func (h *Handler) createMilestone(c *gin.Context) {
 	userID, err := getUserID(c)
 	if err != nil {

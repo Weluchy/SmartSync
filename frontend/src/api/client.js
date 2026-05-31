@@ -1,4 +1,5 @@
-const GATEWAY = "http://localhost:8000";
+// GATEWAY_URL из переменной окружения или localhost для разработки
+const GATEWAY = import.meta.env.VITE_GATEWAY_URL || "http://localhost:8000";
 
 export const api = {
   async request(endpoint, options = {}) {
@@ -13,20 +14,37 @@ export const api = {
       headers['Authorization'] = `Bearer ${token}`;
     }
 
-    // Убираем возможный лишний слеш, если он есть в начале эндпоинта
     const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
     
-    const response = await fetch(`${GATEWAY}${cleanEndpoint}`, {
-      ...options,
-      headers,
-    });
+    let response;
+    try {
+      response = await fetch(`${GATEWAY}${cleanEndpoint}`, {
+        ...options,
+        headers,
+      });
+    } catch {
+      throw new Error('Сервер недоступен. Проверьте подключение к сети.');
+    }
 
     if (response.status === 401) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('smartsync_user_positions');
       window.dispatchEvent(new Event('auth-expired'));
-      throw new Error('Unauthorized');
+      throw new Error('Сессия истекла. Войдите снова.');
     }
     
-    const data = await response.json();
+    // Для 204 No Content (например DELETE)
+    if (response.status === 204) {
+      return null;
+    }
+
+    let data;
+    try {
+      data = await response.json();
+    } catch {
+      throw new Error('Ошибка формата ответа от сервера');
+    }
+    
     if (!response.ok) throw new Error(data.error || 'Ошибка API');
     return data;
   },

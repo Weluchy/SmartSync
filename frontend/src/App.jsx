@@ -76,6 +76,15 @@ const loadInvitations = useCallback(async () => {
 
   const logout = () => {
     localStorage.removeItem('token');
+    // Очищаем все сохранённые позиции графа при выходе
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key.startsWith('smartsync_graph_positions_')) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k));
     setIsAuthenticated(false);
   };
 

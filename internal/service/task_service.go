@@ -362,6 +362,13 @@ func (s *TaskService) GetMilestones(projectID, userID int) ([]models.Milestone, 
 	return s.repo.GetMilestones(projectID)
 }
 
+func (s *TaskService) DeleteMilestone(projectID, milestoneID, userID int) error {
+	if _, err := s.repo.CheckAccess(projectID, userID, models.RoleWeights[models.RoleAdmin]); err != nil {
+		return err
+	}
+	return s.repo.DeleteMilestone(projectID, milestoneID)
+}
+
 func (s *TaskService) CreateMilestone(projectID, userID int, title string, deadline string) (*models.Milestone, error) {
 	if _, err := s.repo.CheckAccess(projectID, userID, models.RoleWeights[models.RoleEditor]); err != nil {
 		return nil, err
