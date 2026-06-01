@@ -7,6 +7,7 @@ import (
 	"smartsync/internal/models"
 	"smartsync/internal/service"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 )
@@ -46,6 +47,7 @@ func (h *Handler) InitRoutes() *gin.Engine {
 		protected.POST("/projects/:project_id/milestones", h.createMilestone)
 		protected.DELETE("/projects/:project_id/milestones/:milestone_id", h.deleteMilestone)
 		protected.GET("/projects/:project_id/stats", h.getProjectStats)
+		protected.GET("/search", h.searchTasks)
 	}
 	projectHandler := NewProjectHandler(h.projectService)
 	projectHandler.RegisterRoutes(protected)
@@ -347,6 +349,56 @@ func getUserID(c *gin.Context) (int, error) {
 	default:
 		return 0, errors.New("invalid user id type")
 	}
+}
+
+// @Summary Глобальный поиск
+// @Description Ищет задачи по названию, описанию, ID
+// @Tags Search
+// @Produce json
+// @Param q query string true "Поисковый запрос"
+// @Success 200 {array} models.Task
+// @Security bearerAuth
+// @Router /search [get]
+func (h *Handler) searchTasks(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	query := c.Query("q")
+	if query == "" {
+		c.JSON(http.StatusOK, []models.Task{})
+		return
+	}
+
+	// Находим проекты, где пользователь участник
+	projects, err := h.projectService.GetUserProjects(userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка поиска"})
+		return
+	}
+
+	var results []models.Task
+	for _, p := range projects {
+		tasks, err := h.service.GetTasksByProject(p.ID, userID)
+		if err != nil {
+			continue
+		}
+		for _, t := range tasks {
+			if contains(t.Title, query) || contains(t.Description, query) {
+				results = append(results, t)
+			}
+		}
+	}
+	if results == nil {
+		results = []models.Task{}
+	}
+	c.JSON(http.StatusOK, results)
+}
+
+// contains проверяет подстроку без учёта регистра
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }
 
 func (h *Handler) getMyInvitations(c *gin.Context) {

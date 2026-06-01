@@ -236,6 +236,7 @@ func main() {
 		protected.GET("/projects/:project_id/milestones", taskProxy)
 		protected.POST("/projects/:project_id/milestones", taskProxy)
 		protected.DELETE("/projects/:project_id/milestones/:milestone_id", taskProxy)
+		protected.GET("/search", taskProxy)
 	}
 
 	// Graceful shutdown
