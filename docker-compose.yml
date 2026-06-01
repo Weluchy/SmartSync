@@ -136,6 +136,21 @@ services:
       - REDIS_ADDR=redis:6379
       - DATABASE_URL=postgres://user:password@postgres:5432/smartsync?sslmode=disable
 
+  deadline-service:
+    build:
+      context: .
+      args:
+        SERVICE_NAME: deadline-service
+    container_name: smartsync_deadline_service
+    depends_on:
+      - nats
+      - postgres
+    restart: unless-stopped
+    environment:
+      - NATS_URL=nats://nats:4222
+      - DATABASE_URL=postgres://user:password@postgres:5432/smartsync?sslmode=disable
+      - INTERVAL_SECONDS=60
+
 volumes:
   mongo_data:
   pg_data_new:
