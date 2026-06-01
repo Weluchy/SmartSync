@@ -1,12 +1,21 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { api } from './api/client';
-import MainLayout from './components/Layout/MainLayout';
 import Sidebar from './components/Sidebar/Sidebar';
-import KanbanBoard from './components/Kanban/KanbanBoard';
-import TaskGraph from './components/Graph/TaskGraph';
-import UserProfile from './components/Profile/UserProfile';
-import Dashboard from './components/Dashboard/Dashboard';
-import UserProfilePage from './components/Profile/UserProfilePage';
+
+// Lazy-loaded components — грузятся только когда нужны
+const MainLayout = lazy(() => import('./components/Layout/MainLayout'));
+const KanbanBoard = lazy(() => import('./components/Kanban/KanbanBoard'));
+const TaskGraph = lazy(() => import('./components/Graph/TaskGraph'));
+const UserProfile = lazy(() => import('./components/Profile/UserProfile'));
+const Dashboard = lazy(() => import('./components/Dashboard/Dashboard'));
+const UserProfilePage = lazy(() => import('./components/Profile/UserProfilePage'));
+
+// Плейсхолдер загрузки
+const PageLoader = () => (
+  <div className="flex-1 flex items-center justify-center bg-gray-50">
+    <div className="text-gray-400 text-sm font-medium animate-pulse">Загрузка...</div>
+  </div>
+);
 
 export default function App() {
   const [isAuthenticated, setIsAuthenticated] = useState(!!localStorage.getItem('token'));
@@ -14,13 +23,12 @@ export default function App() {
   const [currentProjectId, setCurrentProjectId] = useState(null);
   const [activeView, setActiveView] = useState('graph');
   const [invitations, setInvitations] = useState([]);
-  const [viewUserId, setViewUserId] = useState(null); // для просмотра чужого профиля
+  const [viewUserId, setViewUserId] = useState(null);
   
   const [authMode, setAuthMode] = useState('login');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-
 
 const loadInvitations = useCallback(async () => {
     try {
@@ -39,7 +47,6 @@ const loadInvitations = useCallback(async () => {
     } catch (err) { console.error('Ошибка загрузки проектов:', err); }
   }, [currentProjectId]);
 
-  // 3. И ТОЛЬКО ПОТОМ используем их в useEffect
   useEffect(() => {
     if (isAuthenticated) {
       loadProjects();
@@ -101,20 +108,20 @@ const loadInvitations = useCallback(async () => {
     await api.post('/projects', { name });
     loadProjects();
   }}
-  invitations={invitations} // ПРИКАЗ: Обязательно добавь эту строку!
+  invitations={invitations}
 />
-        <MainLayout 
+        <Suspense fallback={<PageLoader />}>
+          <MainLayout 
   projectName={currentProject?.name}
   activeView={activeView}
   onSwitchView={(view) => {
     setActiveView(view);
-    setViewUserId(null); // <-- Сбрасываем чужой профиль при навигации
+    setViewUserId(null);
   }}
   onLogout={logout}
   tasks={[]}
 >
-   {/* УСЛОВИЕ ДЛЯ ВИДОВ */}
-  {viewUserId ? (
+   {viewUserId ? (
     <UserProfilePage projectId={currentProjectId} userId={viewUserId} onBack={() => setViewUserId(null)} />
   ) : activeView === 'kanban' ? (
     <KanbanBoard projectId={currentProjectId} onTasksChange={(t) => console.log('tasks loaded:', t?.length)} onViewUser={(uid) => setViewUserId(uid)} />
@@ -126,6 +133,7 @@ const loadInvitations = useCallback(async () => {
     <TaskGraph projectId={currentProjectId} />
   )}
 </MainLayout>
+        </Suspense>
       </div>
     );
   }
