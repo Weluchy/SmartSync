@@ -81,23 +81,31 @@ func (rl *ipRateLimiter) allow(ip string) bool {
 var rateLimiter = newRateLimiter(100, 1*time.Second)
 
 var jwtSecret []byte
-var cb *gobreaker.CircuitBreaker
+
+// Circuit Breaker для task-service (отдельный для каждого сервиса, чтобы сбой одного не блокировал другой)
+var taskCB *gobreaker.CircuitBreaker
+var authCB *gobreaker.CircuitBreaker
+var auditCB *gobreaker.CircuitBreaker
+
+func newCB(name string) *gobreaker.CircuitBreaker {
+	st := gobreaker.Settings{
+		Name:        name,
+		MaxRequests: 5, // Больше тестовых запросов при проверке
+		Interval:    10 * time.Second,
+		Timeout:     5 * time.Second, // Быстрее восстанавливаемся
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			failureRatio := float64(counts.TotalFailures) / float64(counts.Requests)
+			return counts.Requests >= 5 && failureRatio >= 0.6
+		},
+	}
+	return gobreaker.NewCircuitBreaker(st)
+}
 
 func init() {
 	jwtSecret = []byte("smartsync_diploma_secret_key_2026")
-	// Настройки предохранителя
-	st := gobreaker.Settings{
-		Name:        "Microservices-Gateway-CB",
-		MaxRequests: 3,               // Сколько тестовых запросов пускать при проверке оживления
-		Interval:    5 * time.Second, // Период сброса счетчиков
-		Timeout:     7 * time.Second, // Как долго цепь остается разомкнутой
-		ReadyToTrip: func(counts gobreaker.Counts) bool {
-			// Цепь размыкается, если было > 3 запросов и > 50% из них упали
-			failureRatio := float64(counts.TotalFailures) / float64(counts.Requests)
-			return counts.Requests >= 3 && failureRatio >= 0.5
-		},
-	}
-	cb = gobreaker.NewCircuitBreaker(st)
+	taskCB = newCB("Task-Service-CB")
+	authCB = newCB("Auth-Service-CB")
+	auditCB = newCB("Audit-Service-CB")
 }
 
 // Настройка для WebSockets (разрешаем запросы с любых доменов)
@@ -116,21 +124,24 @@ func main() {
 	r := gin.Default()
 
 	r.Use(func(c *gin.Context) {
-		// Rate limiting по IP
+		// CORS заголовки — ВСЕГДА, даже для OPTIONS (preflight)
+		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE, PUT, PATCH")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+
+		// OPTIONS (preflight) — отвечаем сразу, без rate limiter и без прокси
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+
+		// Rate limiting по IP (только для реальных запросов)
 		ip := c.ClientIP()
 		if !rateLimiter.allow(ip) {
 			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "Слишком много запросов. Попробуйте позже."})
 			return
 		}
 
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE, PUT, PATCH")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
-
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(204)
-			return
-		}
 		c.Next()
 	})
 
@@ -190,12 +201,12 @@ func main() {
 	})
 
 	// Динамические прокси вместо жесткого localhost
-	authProxy := reverseProxy(authURL)
+	authProxy := reverseProxy(authURL, authCB)
+	taskProxy := reverseProxy(taskURL, taskCB)
+	auditProxy := reverseProxy(auditURL, auditCB)
+
 	r.POST("/register", authProxy)
 	r.POST("/login", authProxy)
-
-	taskProxy := reverseProxy(taskURL)
-	auditProxy := reverseProxy(auditURL)
 
 	protected := r.Group("/")
 	protected.Use(authMiddleware())
@@ -303,7 +314,7 @@ func authMiddleware() gin.HandlerFunc {
 	}
 }
 
-func reverseProxy(target string) gin.HandlerFunc {
+func reverseProxy(target string, cb *gobreaker.CircuitBreaker) gin.HandlerFunc {
 	targetURL, _ := url.Parse(target)
 	proxy := httputil.NewSingleHostReverseProxy(targetURL)
 
