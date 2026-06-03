@@ -14,13 +14,14 @@ func NewProjectRepository(db *sql.DB) *ProjectRepository {
 	return &ProjectRepository{db: db}
 }
 
-// Получаем все проекты: и свои, и те, куда нас пригласили
+// Получаем все проекты (включая архивные)
 func (r *ProjectRepository) GetUserProjects(userID int) ([]models.Project, error) {
 	query := `
-    SELECT p.id, p.name, p.owner_id, pm.role 
+    SELECT p.id, p.name, p.owner_id, pm.role, COALESCE(p.archived, false)
     FROM projects p
     JOIN project_members pm ON p.id = pm.project_id
     WHERE pm.user_id = $1
+    ORDER BY p.archived ASC, p.id DESC
 `
 	rows, err := r.db.Query(query, userID)
 	if err != nil {
@@ -31,7 +32,7 @@ func (r *ProjectRepository) GetUserProjects(userID int) ([]models.Project, error
 	var projects []models.Project
 	for rows.Next() {
 		var p models.Project
-		rows.Scan(&p.ID, &p.Name, &p.OwnerID, &p.Role)
+		rows.Scan(&p.ID, &p.Name, &p.OwnerID, &p.Role, &p.Archived)
 		projects = append(projects, p)
 	}
 
@@ -62,7 +63,7 @@ func (r *ProjectRepository) createDefaultProject(userID int) ([]models.Project, 
 	}
 
 	tx.Commit()
-	return []models.Project{{ID: newID, Name: "Мой первый проект", OwnerID: userID, Role: "owner"}}, nil
+	return []models.Project{{ID: newID, Name: "Мой первый проект", OwnerID: userID, Role: "owner", Archived: false}}, nil
 }
 
 // Создание нового проекта с транзакцией
@@ -160,9 +161,33 @@ func (r *ProjectRepository) GetProjectMembers(projectID int) ([]models.ProjectMe
 }
 
 // GetInvitedProjects возвращает проекты, куда пользователь приглашён (роль != owner)
+func (r *ProjectRepository) ArchiveProject(projectID, userID int) error {
+	result, err := r.db.Exec("UPDATE projects SET archived = true WHERE id = $1 AND owner_id = $2", projectID, userID)
+	if err != nil {
+		return err
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("только владелец может архивировать проект")
+	}
+	return nil
+}
+
+func (r *ProjectRepository) UnarchiveProject(projectID, userID int) error {
+	result, err := r.db.Exec("UPDATE projects SET archived = false WHERE id = $1 AND owner_id = $2", projectID, userID)
+	if err != nil {
+		return err
+	}
+	rows, _ := result.RowsAffected()
+	if rows == 0 {
+		return fmt.Errorf("только владелец может разархивировать проект")
+	}
+	return nil
+}
+
 func (r *ProjectRepository) GetInvitedProjects(userID int) ([]models.Project, error) {
 	query := `
-		SELECT p.id, p.name, p.owner_id, pm.role 
+		SELECT p.id, p.name, p.owner_id, pm.role, COALESCE(p.archived, false)
 		FROM projects p
 		JOIN project_members pm ON p.id = pm.project_id
 		WHERE pm.user_id = $1 AND pm.role != 'owner'
@@ -176,7 +201,7 @@ func (r *ProjectRepository) GetInvitedProjects(userID int) ([]models.Project, er
 	var projects []models.Project
 	for rows.Next() {
 		var p models.Project
-		rows.Scan(&p.ID, &p.Name, &p.OwnerID, &p.Role)
+		rows.Scan(&p.ID, &p.Name, &p.OwnerID, &p.Role, &p.Archived)
 		projects = append(projects, p)
 	}
 	if projects == nil {

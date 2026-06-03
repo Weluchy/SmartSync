@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"smartsync/internal/models"
 	"strconv"
@@ -63,6 +64,37 @@ func (h *Handler) createMilestone(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusCreated, m)
+}
+
+func (h *Handler) exportProjectCSV(c *gin.Context) {
+	userID, err := getUserID(c)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
+
+	tasks, err := h.service.GetTasksByProject(projectID, userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка загрузки"})
+		return
+	}
+
+	// Формируем CSV
+	csv := "ID,Название,Описание,Статус,Опт,Реал,Песс,Исполнитель,Приоритет,Длительность\n"
+	for _, t := range tasks {
+		assignee := ""
+		if t.AssigneeName != "" {
+			assignee = t.AssigneeName
+		}
+		csv += fmt.Sprintf("%d,\"%s\",\"%s\",%s,%d,%d,%d,%s,%.1f,%.1f\n",
+			t.ID, t.Title, t.Description, t.Status, t.Opt, t.Real, t.Pess,
+			assignee, t.PriorityScore, t.DurationHours)
+	}
+
+	c.Header("Content-Type", "text/csv; charset=utf-8")
+	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=project_%d_tasks.csv", projectID))
+	c.String(200, csv)
 }
 
 func (h *Handler) getProjectStats(c *gin.Context) {

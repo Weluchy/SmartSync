@@ -226,6 +226,8 @@ func main() {
 
 		protected.DELETE("/projects/:project_id/members/:user_id", taskProxy)
 		protected.PATCH("/projects/:project_id/members/:user_id", taskProxy)
+		protected.POST("/projects/:project_id/archive", taskProxy)
+		protected.POST("/projects/:project_id/unarchive", taskProxy)
 
 		protected.GET("/logs/:task_id", auditProxy)
 		protected.POST("/internal/users/bulk", authProxy)
@@ -236,6 +238,7 @@ func main() {
 		protected.GET("/projects/:project_id/milestones", taskProxy)
 		protected.POST("/projects/:project_id/milestones", taskProxy)
 		protected.DELETE("/projects/:project_id/milestones/:milestone_id", taskProxy)
+		protected.GET("/projects/:project_id/export/csv", taskProxy)
 		protected.GET("/search", taskProxy)
 	}
 

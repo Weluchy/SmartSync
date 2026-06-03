@@ -17,10 +17,11 @@ var RoleWeights = map[string]int{
 }
 
 type Project struct {
-	ID      int    `json:"id"`
-	Name    string `json:"name"`
-	OwnerID int    `json:"owner_id"`
-	Role    string `json:"role,omitempty"`
+	ID       int    `json:"id"`
+	Name     string `json:"name"`
+	OwnerID  int    `json:"owner_id"`
+	Role     string `json:"role,omitempty"`
+	Archived bool   `json:"archived"`
 }
 
 type ProjectMember struct {

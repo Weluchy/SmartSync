@@ -47,6 +47,7 @@ func (h *Handler) InitRoutes() *gin.Engine {
 		protected.POST("/projects/:project_id/milestones", h.createMilestone)
 		protected.DELETE("/projects/:project_id/milestones/:milestone_id", h.deleteMilestone)
 		protected.GET("/projects/:project_id/stats", h.getProjectStats)
+		protected.GET("/projects/:project_id/export/csv", h.exportProjectCSV)
 		protected.GET("/search", h.searchTasks)
 	}
 	projectHandler := NewProjectHandler(h.projectService)

@@ -49,3 +49,11 @@ func (s *ProjectService) UpdateMemberRole(projectID, ownerID, targetUserID int, 
 func (s *ProjectService) GetInvitedProjects(userID int) ([]models.Project, error) {
 	return s.repo.GetInvitedProjects(userID)
 }
+
+func (s *ProjectService) ArchiveProject(projectID, userID int) error {
+	return s.repo.ArchiveProject(projectID, userID)
+}
+
+func (s *ProjectService) UnarchiveProject(projectID, userID int) error {
+	return s.repo.UnarchiveProject(projectID, userID)
+}

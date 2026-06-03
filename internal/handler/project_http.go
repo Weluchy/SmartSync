@@ -25,8 +25,9 @@ func (h *ProjectHandler) RegisterRoutes(protected *gin.RouterGroup) {
 	protected.POST("/projects/:project_id/members", h.addMember)
 	protected.GET("/projects/:project_id/members", h.getMembers)
 	protected.DELETE("/projects/:project_id/members/:user_id", h.removeMember)
-	// РЕГИСТРАЦИЯ PATCH
 	protected.PATCH("/projects/:project_id/members/:user_id", h.updateMemberRole)
+	protected.POST("/projects/:project_id/archive", h.archiveProject)
+	protected.POST("/projects/:project_id/unarchive", h.unarchiveProject)
 }
 
 func (h *ProjectHandler) getMembers(c *gin.Context) {
@@ -123,6 +124,26 @@ func (h *ProjectHandler) addMember(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Участник приглашен"})
+}
+
+func (h *ProjectHandler) archiveProject(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
+	if err := h.service.ArchiveProject(projectID, userID.(int)); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Проект архивирован"})
+}
+
+func (h *ProjectHandler) unarchiveProject(c *gin.Context) {
+	userID, _ := c.Get("user_id")
+	projectID, _ := strconv.Atoi(c.Param("project_id"))
+	if err := h.service.UnarchiveProject(projectID, userID.(int)); err != nil {
+		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Проект разархивирован"})
 }
 
 func (h *ProjectHandler) updateMemberRole(c *gin.Context) {
