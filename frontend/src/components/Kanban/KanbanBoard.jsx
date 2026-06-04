@@ -276,10 +276,12 @@ export default function KanbanBoard({ projectId, onTasksChange, onViewUser }) {
                     }
                     return (
                       <motion.div key={task.id} layout initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.8 }} transition={{ duration: 0.2 }}
-                        draggable onDragStart={e => { e.dataTransfer.setData('taskId', task.id); e.currentTarget.classList.add('dragging'); }}
-                        onDragEnd={e => e.currentTarget.classList.remove('dragging')}
-                        className="task-card bg-white p-4 rounded-2xl shadow-sm border-2 transition-all cursor-pointer group"
-                        style={{ borderColor: isCritical ? '#fecaca' : 'var(--border)' }}>
+  draggable 
+  onDragStart={e => { e.stopPropagation(); e.dataTransfer.setData('taskId', task.id); e.currentTarget.classList.add('dragging'); }}
+  onDragEnd={e => { e.stopPropagation(); e.currentTarget.classList.remove('dragging'); }}
+  onClick={(e) => { e.stopPropagation(); setEditingTask(task); setIsModalOpen(true); }}
+  className="task-card relative bg-white p-4 rounded-2xl shadow-sm border-2 transition-all cursor-pointer group"
+  style={{ borderColor: isCritical ? '#fecaca' : 'var(--border)' }}>
                         <div className="flex justify-between items-start">
                           <div className="flex items-center gap-2">
                             <button onClick={e => { e.stopPropagation(); toggleSelect(task.id); }}
@@ -332,8 +334,6 @@ export default function KanbanBoard({ projectId, onTasksChange, onViewUser }) {
                             )}
                           </div>
                         </div>
-                        {/* Клик по карточке — открыть модалку (кроме клика по инлайн-редактору) */}
-                        <div className="absolute inset-0" onClick={() => { setEditingTask(task); setIsModalOpen(true); }} />
                       </motion.div>
                     );
                   })}

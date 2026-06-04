@@ -85,12 +85,12 @@ export default function UserProfile() {
               </div>
               <div>
                 <input 
-                  className="text-xl font-bold bg-transparent border-b border-dashed outline-none mb-1 pb-1"
-                  style={{ color: 'var(--text-primary)', borderColor: 'var(--border-hover)' }}
-                  value={profile.username}
-                  placeholder="Ваше имя"
-                  onChange={e => setProfile({...profile, username: e.target.value})}
-                />
+  className="text-xl font-bold bg-transparent border-b border-dashed outline-none mb-1 pb-1"
+  style={{ color: 'var(--text-primary)', borderColor: 'var(--border-hover)' }}
+  value={profile.full_name || ''}
+  placeholder="Ваше имя"
+  onChange={e => setProfile({...profile, full_name: e.target.value})}
+/>
                 <p className="text-sm" style={{ color: 'var(--text-muted)' }}>ID пользователя: {userId || '—'}</p>
               </div>
             </div>

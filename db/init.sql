@@ -13,18 +13,23 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS projects (
     id SERIAL PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
-    owner_id INTEGER REFERENCES users(id) ON DELETE CASCADE
+    description TEXT DEFAULT '',
+    owner_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+    status VARCHAR(50) DEFAULT 'active',
+    archived BOOLEAN DEFAULT false,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Таблица участников проектов (RBAC)
 CREATE TABLE IF NOT EXISTS project_members (
     project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
     user_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
-    role VARCHAR(20) DEFAULT 'viewer',
+    role VARCHAR(50) NOT NULL DEFAULT 'viewer',
     PRIMARY KEY (project_id, user_id)
 );
 
--- Таблица вех (milestones) — ДО tasks, т.к. tasks на неё ссылается
+-- Таблица вех (milestones)
 CREATE TABLE IF NOT EXISTS milestones (
     id SERIAL PRIMARY KEY,
     project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,

@@ -159,27 +159,36 @@ const loadInvitations = useCallback(async () => {
 
         {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg font-medium">{error}</div>}
 
-        <form onSubmit={handleAuthSubmit} className="flex flex-col gap-4">
-          <input 
-            type="text" 
-            placeholder="Логин" 
-            value={username}
-            onChange={e => setUsername(e.target.value)}
-            className="border p-3 rounded-lg bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" 
-            required 
-          />
-          <input 
-            type="password" 
-            placeholder="Пароль" 
-            value={password}
-            onChange={e => setPassword(e.target.value)}
-            className="border p-3 rounded-lg bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" 
-            required 
-          />
-          <button type="submit" className="bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition shadow-lg mt-2">
-            {authMode === 'login' ? 'Войти' : 'Создать аккаунт'}
-          </button>
-        </form>
+<div className="flex flex-col gap-4">
+  {/* Поле логина */}
+  <input 
+    type="text" 
+    placeholder="Логин" 
+    value={username}
+    onChange={e => setUsername(e.target.value)}
+    className="border p-3 rounded-lg bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" 
+    autoComplete="off"
+    data-lpignore="true"
+  />
+  {/* Поле пароля (замаскировано под обычный текст через CSS, чтобы ослепить расширения) */}
+  <input 
+    type="text" 
+    placeholder="Пароль" 
+    value={password}
+    onChange={e => setPassword(e.target.value)}
+    className="border p-3 rounded-lg bg-gray-50 outline-none focus:ring-2 focus:ring-blue-500" 
+    style={{ WebkitTextSecurity: 'disc' }}
+    autoComplete="off"
+    data-lpignore="true"
+  />
+  <button 
+    type="button" 
+    onClick={handleAuthSubmit} 
+    className="bg-blue-600 text-white font-bold py-3 rounded-lg hover:bg-blue-700 transition shadow-lg mt-2"
+  >
+    {authMode === 'login' ? 'Войти' : 'Создать аккаунт'}
+  </button>
+</div>
       </div>
     </div>
   );

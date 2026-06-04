@@ -136,11 +136,11 @@ func main() {
 		}
 
 		// Rate limiting по IP (только для реальных запросов)
-		ip := c.ClientIP()
-		if !rateLimiter.allow(ip) {
-			c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "Слишком много запросов. Попробуйте позже."})
-			return
-		}
+		// ip := c.ClientIP()
+		// if !rateLimiter.allow(ip) {
+		// 	c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "Слишком много запросов. Попробуйте позже."})
+		// 	return
+		// }
 
 		c.Next()
 	})

@@ -1,6 +1,5 @@
 /* index.css */
 @import "tailwindcss";
-
 /* Светлая тема (по умолчанию) */
 :root {
   --bg-page: #f9fafb;

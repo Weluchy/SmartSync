@@ -1,6 +1,5 @@
 // GATEWAY_URL из переменной окружения или localhost для разработки
-const GATEWAY = import.meta.env.VITE_GATEWAY_URL || "http://localhost:8000";
-
+const GATEWAY = import.meta.env.VITE_GATEWAY_URL || "/api";
 export const api = {
   async request(endpoint, options = {}) {
     const token = localStorage.getItem('token');
