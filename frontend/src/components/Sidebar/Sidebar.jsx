@@ -99,8 +99,11 @@ const changeRole = async (userId, newRole) => {
             {invitations.map(inv => (
               <div key={inv.id} className="bg-white p-3 rounded-xl border border-blue-100 shadow-sm">
                 <p className="text-[11px] text-blue-800 font-medium mb-2">Проект: {inv.project_name}</p>
-                <button className="w-full bg-blue-600 text-white text-[10px] font-bold py-1.5 rounded-lg hover:bg-blue-700">
-                  ПРИНЯТЬ
+                <button 
+                  onClick={() => onSelectProject(inv.id)}
+                  className="w-full bg-blue-600 text-white text-[10px] font-bold py-1.5 rounded-lg hover:bg-blue-700"
+                >
+                  ОТКРЫТЬ ПРОЕКТ
                 </button>
               </div>
             ))}

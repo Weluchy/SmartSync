@@ -83,13 +83,20 @@ export default function KanbanBoard({ projectId, onTasksChange, onViewUser }) {
     setEditingTitle(task.title);
   };
 
-  const saveEditTitle = async () => {
+const saveEditTitle = async () => {
     if (!editingTitleId || !editingTitle.trim()) {
       setEditingTitleId(null);
       return;
     }
     try {
-      await api.put(`/tasks/${editingTitleId}`, { title: editingTitle.trim() });
+      // Находим текущую задачу, чтобы не потерять ее данные
+      const taskToUpdate = tasks.find(t => t.id === editingTitleId);
+      
+      await api.put(`/tasks/${editingTitleId}`, { 
+        ...taskToUpdate, // Отправляем все старые поля (opt, real, pess, assignee_id)
+        title: editingTitle.trim() // Перезаписываем только название
+      });
+      
       setEditingTitleId(null);
       setTimeout(loadTasks, 300);
     } catch (err) {

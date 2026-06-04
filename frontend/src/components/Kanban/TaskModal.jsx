@@ -148,7 +148,7 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
                 {comments.length > 0 ? comments.map(c => (
                   <div key={c.id} className="bg-white border rounded-xl p-3 shadow-sm">
                     <div className="flex justify-between items-center mb-1">
-                      <span className="font-bold text-xs text-blue-600">{c.user_name || 'Пользователь'}</span>
+                      <span className="font-bold text-xs text-blue-600">{c.username || 'Пользователь'}</span>
                       <span className="text-[10px] text-gray-400">{new Date(c.created_at).toLocaleString('ru-RU')}</span>
                     </div>
                     <p className="text-sm text-gray-700 whitespace-pre-wrap">{c.text}</p>

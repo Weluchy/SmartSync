@@ -80,8 +80,8 @@ export default function UserProfile() {
           
           <div className="p-8 space-y-6">
             <div className="flex items-center gap-6 mb-4">
-              <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center shadow-inner">
-                <User size={40} />
+              <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center shadow-inner text-3xl font-black uppercase">
+                {profile?.full_name ? profile.full_name.charAt(0) : (profile?.username ? profile.username.charAt(0) : <User size={40} />)}
               </div>
               <div>
                 <input 
