@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, lazy, Suspense } from 'react';
 import { api } from './api/client';
 import Sidebar from './components/Sidebar/Sidebar';
+import { Toaster, toast } from 'react-hot-toast';
 
 // Lazy-loaded components — грузятся только когда нужны
 const MainLayout = lazy(() => import('./components/Layout/MainLayout'));
@@ -69,15 +70,23 @@ const loadInvitations = useCallback(async () => {
       const data = await api.post(endpoint, { username, password });
       
       if (authMode === 'register') {
-        alert('Успешно! Теперь войдите под своим логином.');
+        toast.success('Аккаунт создан! Теперь войдите под своим логином.', {
+          style: { background: '#1a1a2e', color: '#7ac9a7', border: '1px solid #7ac9a7' }
+        });
         setAuthMode('login');
         setPassword('');
       } else {
         localStorage.setItem('token', data.token);
+        toast.success('Успешный вход!', {
+          style: { background: '#1a1a2e', color: '#7ac9a7', border: '1px solid #7ac9a7' }
+        });
         setIsAuthenticated(true);
       }
     } catch (err) { 
       setError(err.message); 
+      toast.error(err.message, {
+        style: { background: '#1a1a2e', color: '#f87171', border: '1px solid #f87171' }
+      });
     }
   };
 
@@ -92,6 +101,10 @@ const loadInvitations = useCallback(async () => {
       }
     }
     keysToRemove.forEach(k => localStorage.removeItem(k));
+    toast('Вы вышли из системы', {
+      icon: '👋',
+      style: { background: '#1a1a2e', color: '#e4e4e7', border: '1px solid #6366f1' }
+    });
     setIsAuthenticated(false);
   };
 
@@ -100,6 +113,18 @@ const loadInvitations = useCallback(async () => {
   if (isAuthenticated) {
     return (
       <div className="flex h-screen w-full">
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            duration: 4000,
+            style: {
+              borderRadius: '12px',
+              padding: '12px 16px',
+              fontSize: '13px',
+              fontWeight: 500,
+            },
+          }}
+        />
         <Sidebar 
   projects={projects} 
   currentProjectId={currentProjectId} 
@@ -109,6 +134,7 @@ const loadInvitations = useCallback(async () => {
     loadProjects();
   }}
   invitations={invitations}
+  onProjectUpdated={loadProjects}
 />
         <Suspense fallback={<PageLoader />}>
           <MainLayout 
@@ -140,6 +166,18 @@ const loadInvitations = useCallback(async () => {
 
   return (
     <div className="flex h-screen items-center justify-center bg-gray-900">
+      <Toaster
+        position="top-right"
+        toastOptions={{
+          duration: 4000,
+          style: {
+            borderRadius: '12px',
+            padding: '12px 16px',
+            fontSize: '13px',
+            fontWeight: 500,
+          },
+        }}
+      />
       <div className="bg-white p-8 rounded-xl shadow-2xl w-96">
         <h1 className="text-3xl font-black text-center text-blue-600 mb-6">SmartSync</h1>
         <div className="flex gap-2 mb-6 border-b border-gray-200">

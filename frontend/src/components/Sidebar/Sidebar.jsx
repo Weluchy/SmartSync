@@ -1,16 +1,48 @@
-import { useState, useEffect, useCallback } from 'react'; // ИСПРАВЛЕНО: добавлены хуки
+import { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
-import { Plus, Users, Send, Settings2, Moon, Sun } from 'lucide-react'; 
+import { Plus, Users, Send, Settings2, Moon, Sun, Activity, X } from 'lucide-react'; 
 import { api } from '../../api/client';
 import { useTheme } from '../../ThemeContext';
+import { toast } from 'react-hot-toast';
+import ProjectSettingsModal from './ProjectSettingsModal';
 
-export default function Sidebar({ projects, currentProjectId, onSelectProject, onCreateProject, invitations = [] }) {
+const MICROSERVICES = [
+  { id: 'task', label: 'Task API', endpoint: '/api/health' },
+  { id: 'auth', label: 'Auth API', endpoint: '/api/auth/health' },
+  { id: 'math', label: 'Math Engine', endpoint: '/api/math/health' },
+];
+
+export default function Sidebar({ projects, currentProjectId, onSelectProject, onCreateProject, invitations = [], onProjectUpdated }) {
   const { isDark, toggleTheme } = useTheme();
   const [inviteUser, setInviteUser] = useState('');
   const [members, setMembers] = useState([]);
   const [selectedRole, setSelectedRole] = useState('viewer');
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [servicesStatus, setServicesStatus] = useState({});
 
-  // Загрузка участников текущего проекта
+  // Пинг микросервисов
+  const pingServices = useCallback(async () => {
+    const results = {};
+    for (const svc of MICROSERVICES) {
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        const res = await fetch(svc.endpoint, { signal: controller.signal });
+        clearTimeout(timeout);
+        results[svc.id] = res.ok ? 'healthy' : 'down';
+      } catch {
+        results[svc.id] = 'down';
+      }
+    }
+    setServicesStatus(results);
+  }, []);
+
+  useEffect(() => {
+    pingServices();
+    const interval = setInterval(pingServices, 30000);
+    return () => clearInterval(interval);
+  }, [pingServices]);
+
   const loadMembers = useCallback(async () => {
     if (!currentProjectId) return;
     try {
@@ -22,11 +54,18 @@ export default function Sidebar({ projects, currentProjectId, onSelectProject, o
   }, [currentProjectId]);
 
 const removeMember = async (userId) => {
-  if (!confirm('Удалить участника из проекта?')) return;
   try {
     await api.delete(`/projects/${currentProjectId}/members/${userId}`);
-    loadMembers(); // Обновляем список
-  } catch (err) { alert('Ошибка при удалении: ' + err.message); }
+    toast('Участник удалён из проекта', {
+      icon: '👤',
+      style: { background: '#1a1a2e', color: '#e4e4e7', border: '1px solid #f87171' }
+    });
+    loadMembers();
+  } catch (err) { 
+    toast.error(err.message, {
+      style: { background: '#1a1a2e', color: '#f87171', border: '1px solid #f87171' }
+    });
+  }
 };
 
  const handleInvite = async (e) => {
@@ -34,27 +73,37 @@ const removeMember = async (userId) => {
     try {
       await api.post(`/projects/${currentProjectId}/members`, { 
         username: inviteUser, 
-        role: selectedRole // Отправляем выбранную роль
+        role: selectedRole
       });
       setInviteUser('');
+      toast.success(`Приглашение отправлено ${inviteUser}`, {
+        style: { background: '#1a1a2e', color: '#7ac9a7', border: '1px solid #7ac9a7' }
+      });
       loadMembers();
-    } catch (err) { alert(err.message); }
+    } catch (err) { 
+      toast.error(err.message, {
+        style: { background: '#1a1a2e', color: '#f87171', border: '1px solid #f87171' }
+      });
+    }
 };
+
 const changeRole = async (userId, newRole) => {
     try {
         await api.patch(`/projects/${currentProjectId}/members/${userId}`, { role: newRole });
         loadMembers();
-    } catch (err) { alert(err.message); }
+    } catch (err) { 
+      toast.error(err.message, {
+        style: { background: '#1a1a2e', color: '#f87171', border: '1px solid #f87171' }
+      });
+    }
 };
 
   useEffect(() => {
     loadMembers();
   }, [loadMembers]);
 
- 
-
   return (
-    <aside className="w-72 flex flex-col shadow-sm" style={{ backgroundColor: 'var(--bg-sidebar)', borderRight: '1px solid var(--border)' }}>
+    <aside className="w-72 flex flex-col shadow-sm relative" style={{ backgroundColor: 'var(--bg-sidebar)', borderRight: '1px solid var(--border)' }}>
       <div className="p-6 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
         <h2 className="text-xl font-black text-blue-600 tracking-tight italic">SmartSync.engine</h2>
         <button onClick={toggleTheme} className="p-2 rounded-lg transition-colors" style={{ color: 'var(--text-secondary)' }} title={isDark ? 'Светлая тема' : 'Тёмная тема'}>
@@ -86,12 +135,21 @@ const changeRole = async (userId, newRole) => {
             }`}
           >
             <span className="truncate text-sm font-medium">{p.name}</span>
-            <Settings2 size={14} className="opacity-0 group-hover:opacity-100 text-gray-400" />
+            <Settings2 
+              size={14} 
+              className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 cursor-pointer" 
+              onClick={(e) => {
+                e.stopPropagation();
+                if (currentProjectId) {
+                  setSettingsOpen(true);
+                }
+              }}
+            />
           </div>
         ))}
       </div>
 
-      {/* Входящие приглашения (уже было добавлено) */}
+      {/* Входящие приглашения */}
       {invitations.length > 0 && (
         <div className="p-4 border-t" style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(59,130,246,0.05)' }}>
           <span className="text-[10px] font-bold uppercase tracking-widest block mb-3 px-2" style={{ color: 'var(--text-muted)' }}>Приглашения</span>
@@ -111,7 +169,7 @@ const changeRole = async (userId, newRole) => {
         </div>
       )}
 
-      {/* НОВОЕ: СПИСОК УЧАСТНИКОВ И ФОРМА ПРИГЛАШЕНИЯ */}
+      {/* Участники и приглашение */}
       {currentProjectId && (
         <div className="p-4 border-t" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card-hover)' }}>
           <div className="flex items-center gap-2 mb-3 px-2" style={{ color: 'var(--text-muted)' }}>
@@ -119,15 +177,12 @@ const changeRole = async (userId, newRole) => {
             <span className="text-[10px] font-bold uppercase tracking-widest">Участники</span>
           </div>
 
-          {/* Отрисовка списка людей из стейта members */}
-          
           <div className="space-y-2 mb-4 max-h-40 overflow-y-auto px-1">
             {members.map(member => (
   <div key={member.user_id} className="flex items-center justify-between text-xs py-2 border-b border-gray-50 last:border-0 group">
     <div className="flex flex-col flex-1">
       <span className="text-gray-800 font-semibold">{member.username}</span>
       
-      {/* Если это владелец, просто пишем роль, если нет — даем менять */}
       {member.role === 'owner' ? (
         <span className="text-[9px] uppercase font-bold text-blue-500">
           {member.role}
@@ -151,13 +206,12 @@ const changeRole = async (userId, newRole) => {
         className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-all p-1"
         title="Удалить из проекта"
       >
-        <Plus size={14} className="rotate-45" /> 
+        <X size={14} />
       </button>
     )}
   </div>
 ))}
           </div>
-
 
           <form onSubmit={handleInvite} className="space-y-2">
   <input 
@@ -183,6 +237,29 @@ const changeRole = async (userId, newRole) => {
 </form>
         </div>
       )}
+
+      {/* Индикатор здоровья микросервисов */}
+      <div className="p-3 border-t flex items-center gap-3 px-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card-hover)' }}>
+        <Activity size={12} style={{ color: 'var(--text-muted)' }} />
+        {MICROSERVICES.map(svc => (
+          <div key={svc.id} className="flex items-center gap-1.5" title={`${svc.label}: ${servicesStatus[svc.id] === 'healthy' ? 'Работает' : 'Недоступен'}`}>
+            <span className={`w-2 h-2 rounded-full ${
+              servicesStatus[svc.id] === 'healthy' ? 'bg-green-500 shadow-sm shadow-green-400' : 'bg-red-500 shadow-sm shadow-red-400'
+            }`} />
+            <span className="text-[8px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+              {svc.label === 'Task API' ? 'T' : svc.label === 'Auth API' ? 'A' : 'M'}
+            </span>
+          </div>
+        ))}
+      </div>
+
+      {/* ProjectSettingsModal */}
+      <ProjectSettingsModal 
+        isOpen={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        projectId={currentProjectId}
+        onProjectUpdated={onProjectUpdated}
+      />
     </aside>
   );
 }
@@ -192,5 +269,6 @@ Sidebar.propTypes = {
   currentProjectId: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
   onSelectProject: PropTypes.func.isRequired,
   onCreateProject: PropTypes.func.isRequired,
-  invitations: PropTypes.array
+  invitations: PropTypes.array,
+  onProjectUpdated: PropTypes.func
 };

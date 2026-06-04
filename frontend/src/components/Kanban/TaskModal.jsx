@@ -3,8 +3,9 @@ import PropTypes from 'prop-types';
 import { X, MessageSquare, Edit3, Eye } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { api } from '../../api/client'; 
+import { toast } from 'react-hot-toast';
 
-export default function TaskModal({ isOpen, onClose, onSave, projectId, initialData }) {
+export default function TaskModal({ isOpen, onClose, onSave, projectId, initialData, milestones = [] }) {
   const [formData, setFormData] = useState({
     title: '', description: '', opt: 1, real: 2, pess: 3, status: 'todo'
   });
@@ -24,7 +25,8 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
       setFormData({ 
         ...initialData, 
         description: initialData.description || '', 
-        assignee_id: initialData.assignee_id ?? '' 
+        assignee_id: initialData.assignee_id ?? '',
+        milestone_id: initialData.milestone_id ?? ''
       });
       if (initialData.id) {
         // Грузим логи
@@ -33,7 +35,7 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
         api.get(`/tasks/${initialData.id}/comments`).then(res => setComments(res || [])).catch(() => {});
       }
     } else {
-      setFormData({ title: '', description: '', opt: 1, real: 2, pess: 3, status: 'todo', assignee_id: '' });
+      setFormData({ title: '', description: '', opt: 1, real: 2, pess: 3, status: 'todo', assignee_id: '', milestone_id: '' });
       setLogs([]); 
       setComments([]);
       setActiveTab('details');
@@ -47,6 +49,7 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
     onSave({
       ...formData,
       assignee_id: formData.assignee_id ? parseInt(formData.assignee_id, 10) : null,
+      milestone_id: formData.milestone_id ? parseInt(formData.milestone_id, 10) : null,
       opt: parseInt(formData.opt, 10) || 0,
       real: parseInt(formData.real, 10) || 0,
       pess: parseInt(formData.pess, 10) || 0,
@@ -59,12 +62,17 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
     try {
       await api.post(`/tasks/${initialData.id}/comments`, { text: newComment });
       setNewComment('');
+      toast.success('Комментарий добавлен', {
+        style: { background: '#1a1a2e', color: '#7ac9a7', border: '1px solid #7ac9a7' }
+      });
       // Обновляем список
       const res = await api.get(`/tasks/${initialData.id}/comments`);
       setComments(res || []);
     } catch (err) { 
       console.error(err); 
-      alert("Ошибка при отправке комментария"); 
+      toast.error("Ошибка при отправке комментария", {
+        style: { background: '#1a1a2e', color: '#f87171', border: '1px solid #f87171' }
+      });
     }
   };
 
@@ -139,6 +147,15 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
                   {members.map(m => (<option key={m.user_id} value={m.user_id}>{m.username}</option>))}
                 </select>
               </div>
+
+              {/* Привязка к вехе */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Привязать к вехе</label>
+                <select className="w-full border rounded-lg p-2.5 bg-white outline-none shadow-sm" value={formData.milestone_id || ''} onChange={e => setFormData({...formData, milestone_id: e.target.value})}>
+                  <option value="">Без вехи</option>
+                  {milestones.map(m => (<option key={m.id} value={m.id}>{m.title}</option>))}
+                </select>
+              </div>
             </form>
           )}
 
@@ -201,5 +218,6 @@ TaskModal.propTypes = {
   onClose: PropTypes.func.isRequired,
   onSave: PropTypes.func.isRequired,
   projectId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
-  initialData: PropTypes.object
+  initialData: PropTypes.object,
+  milestones: PropTypes.array
 };

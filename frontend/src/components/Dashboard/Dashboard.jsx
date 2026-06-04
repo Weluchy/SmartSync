@@ -5,12 +5,13 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   PieChart, Pie, Cell
 } from 'recharts';
-import { CheckCircle, Clock, AlertTriangle, Layers, Target, Activity } from 'lucide-react';
+import { CheckCircle, Clock, AlertTriangle, Layers, Target, Activity, Download } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 const COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#ef4444'];
 
 export default function Dashboard({ projectId }) {
-  const [stats, setStats] = useState([]); // Изначально пустой массив!
+  const [stats, setStats] = useState([]);
   const [milestones, setMilestones] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -18,11 +19,9 @@ export default function Dashboard({ projectId }) {
     if (!projectId) return;
     setLoading(true);
     try {
-      // ИСПРАВЛЕНИЕ: Ждем массив задач. Если вернется null, ставим []
       const tasksData = await api.get(`/projects/${projectId}/tasks`);
       setStats(Array.isArray(tasksData) ? tasksData : []);
 
-      // Если в API нет milestones, ловим ошибку и ставим []
       try {
         const milestonesData = await api.get(`/projects/${projectId}/milestones`);
         setMilestones(Array.isArray(milestonesData) ? milestonesData : []);
@@ -31,7 +30,10 @@ export default function Dashboard({ projectId }) {
       }
     } catch (err) {
       console.error("Ошибка загрузки дашборда:", err);
-      setStats([]); // Бронежилет от краша при ошибке 500
+      toast.error("Ошибка загрузки данных", {
+        style: { background: '#1a1a2e', color: '#f87171', border: '1px solid #f87171' }
+      });
+      setStats([]);
     } finally {
       setLoading(false);
     }
@@ -40,6 +42,36 @@ export default function Dashboard({ projectId }) {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const handleExport = async () => {
+    try {
+      // Используем api client для получения blob
+      const token = localStorage.getItem('token');
+      const GATEWAY = import.meta.env.VITE_GATEWAY_URL || "/api";
+      const response = await fetch(`${GATEWAY}/projects/${projectId}/export/csv`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error('Ошибка экспорта');
+      
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `project-${projectId}-report.csv`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success('Отчёт скачан', {
+        style: { background: '#1a1a2e', color: '#7ac9a7', border: '1px solid #7ac9a7' }
+      });
+    } catch (err) {
+      toast.error(err.message || 'Ошибка при скачивании отчёта', {
+        style: { background: '#1a1a2e', color: '#f87171', border: '1px solid #f87171' }
+      });
+    }
+  };
 
   if (loading) {
     return (
@@ -52,7 +84,6 @@ export default function Dashboard({ projectId }) {
     );
   }
 
-  // БРОНЕЖИЛЕТ: Теперь stats всегда массив, ошибки null.length не будет
   const totalTasks = stats.length;
   const inProgressTasks = stats.filter(t => t.status === 'in_progress').length;
   const doneTasks = stats.filter(t => t.status === 'done').length;
@@ -74,12 +105,16 @@ export default function Dashboard({ projectId }) {
     const title = prompt("Введите название новой вехи (например, Спринт 1):");
     if (!title) return;
     try {
-      // Ставим дедлайн через 7 дней по умолчанию
       const deadline = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
       await api.post(`/projects/${projectId}/milestones`, { title, deadline });
-      loadData(); // Обновляем график
+      toast.success(`Веха "${title}" создана`, {
+        style: { background: '#1a1a2e', color: '#7ac9a7', border: '1px solid #7ac9a7' }
+      });
+      loadData();
     } catch (err) {
-      alert("Ошибка при создании: " + err.message);
+      toast.error("Ошибка при создании: " + err.message, {
+        style: { background: '#1a1a2e', color: '#f87171', border: '1px solid #f87171' }
+      });
     }
   };
 
@@ -93,9 +128,14 @@ export default function Dashboard({ projectId }) {
             <h2 className="text-2xl font-bold text-gray-800 tracking-tight">Аналитика проекта</h2>
             <p className="text-sm text-gray-500 mt-1">Ключевые метрики и распределение нагрузки</p>
           </div>
-          <button onClick={loadData} className="text-sm font-bold text-blue-600 bg-blue-50 px-4 py-2 rounded-xl hover:bg-blue-100 transition-colors">
-            Обновить данные
-          </button>
+          <div className="flex items-center gap-3">
+            <button onClick={handleExport} className="text-sm font-bold text-emerald-600 bg-emerald-50 px-4 py-2 rounded-xl hover:bg-emerald-100 transition-colors flex items-center gap-2">
+              <Download size={16} /> Скачать отчёт
+            </button>
+            <button onClick={loadData} className="text-sm font-bold text-blue-600 bg-blue-50 px-4 py-2 rounded-xl hover:bg-blue-100 transition-colors">
+              Обновить данные
+            </button>
+          </div>
         </div>
 
         {/* KPI Карточки */}
@@ -170,6 +210,49 @@ export default function Dashboard({ projectId }) {
           </div>
         </div>
 
+        {/* Прогресс-бар вех */}
+        {milestones.length > 0 && (
+          <div className="bg-white p-6 rounded-2xl border shadow-sm">
+            <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+              <Target size={18} className="text-blue-600" /> Прогресс по вехам
+            </h3>
+            <div className="space-y-4">
+              {milestones.map(m => {
+                const milestoneTasks = stats.filter(t => Number(t.milestone_id) === Number(m.id));
+                const doneMilestoneTasks = milestoneTasks.filter(t => t.status === 'done').length;
+                const progress = milestoneTasks.length > 0 ? Math.round((doneMilestoneTasks / milestoneTasks.length) * 100) : 0;
+                const deadline = new Date(m.deadline || m.due_date);
+                const isOverdue = deadline < new Date() && doneMilestoneTasks < milestoneTasks.length;
+
+                return (
+                  <div key={m.id}>
+                    <div className="flex justify-between items-center mb-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-bold text-gray-700">{m.title}</span>
+                        {isOverdue && <span className="text-[10px] font-bold text-red-500">ПРОСРОЧЕНО</span>}
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <span className="text-xs text-gray-500">
+                          {deadline.toLocaleDateString('ru-RU')}
+                        </span>
+                        <span className="text-xs font-bold text-gray-600">{progress}%</span>
+                      </div>
+                    </div>
+                    <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full rounded-full transition-all duration-500 ${
+                          progress === 100 ? 'bg-green-500' : isOverdue ? 'bg-red-500' : 'bg-blue-500'
+                        }`}
+                        style={{ width: `${progress}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Milestones / Спринты */}
         <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
           <div className="p-6 border-b flex items-center justify-between">
@@ -192,8 +275,8 @@ export default function Dashboard({ projectId }) {
                     </div>
                     <p className="text-xs text-gray-500 mb-4 line-clamp-2">{m.description || 'Нет описания'}</p>
                     <div className="flex justify-between items-center text-xs font-medium">
-                      <span className="text-blue-600">{new Date(m.due_date).toLocaleDateString('ru-RU')}</span>
-                      <span className="text-gray-400">Статус: {m.status}</span>
+                      <span className="text-blue-600">{new Date(m.deadline || m.due_date).toLocaleDateString('ru-RU')}</span>
+                      <span className="text-gray-400">{m.status || 'Активна'}</span>
                     </div>
                   </div>
                 ))}

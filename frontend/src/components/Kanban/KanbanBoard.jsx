@@ -2,8 +2,9 @@ import { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../api/client';
-import { Plus, Trash2, Search, Filter, Clock, CheckSquare, Square, ArrowUpDown } from 'lucide-react';
+import { Plus, Trash2, Search, Filter, Clock, CheckSquare, Square, ArrowUpDown, Flame } from 'lucide-react';
 import TaskModal from './TaskModal';
+import { toast } from 'react-hot-toast';
 
 const COLUMNS = [
   { id: 'todo', title: 'Бэклог', color: 'bg-gray-100' },
@@ -25,11 +26,14 @@ export default function KanbanBoard({ projectId, onTasksChange, onViewUser }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [filterAssignee, setFilterAssignee] = useState('all');
+  const [filterMilestone, setFilterMilestone] = useState('all');
   const [members, setMembers] = useState([]);
+  const [milestones, setMilestones] = useState([]);
   const [sortBy, setSortBy] = useState('created');
   const [selectedIds, setSelectedIds] = useState(new Set());
   const [editingTitleId, setEditingTitleId] = useState(null);
   const [editingTitle, setEditingTitle] = useState('');
+  const [showCritical, setShowCritical] = useState(false);
 
   const loadTasks = useCallback(async () => {
     if (!projectId) return;
@@ -48,22 +52,43 @@ export default function KanbanBoard({ projectId, onTasksChange, onViewUser }) {
     } catch (err) { console.error(err); }
   }, [projectId]);
 
+  const loadMilestones = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const data = await api.get(`/projects/${projectId}/milestones`);
+      setMilestones(data || []);
+    } catch { /* ignore */ }
+  }, [projectId]);
+
   const handleSaveTask = async (taskData) => {
     try {
       if (editingTask) await api.put(`/tasks/${editingTask.id}`, taskData);
       else await api.post('/tasks', taskData);
       setIsModalOpen(false);
+      toast.success(editingTask ? 'Задача обновлена' : 'Задача создана', {
+        style: { background: '#1a1a2e', color: '#7ac9a7', border: '1px solid #7ac9a7' }
+      });
       setTimeout(loadTasks, 300);
-    } catch (err) { alert(err.message); }
+    } catch (err) { 
+      toast.error(err.message, {
+        style: { background: '#1a1a2e', color: '#f87171', border: '1px solid #f87171' }
+      });
+    }
   };
 
   const deleteTask = async (e, id) => {
     e.stopPropagation();
-    if (confirm('Удалить задачу?')) {
-      try {
-        await api.delete(`/tasks/${id}`);
-        setTimeout(loadTasks, 300);
-      } catch (err) { alert(err.message); }
+    try {
+      await api.delete(`/tasks/${id}`);
+      toast('Задача удалена', {
+        icon: '🗑️',
+        style: { background: '#1a1a2e', color: '#e4e4e7', border: '1px solid #f87171' }
+      });
+      setTimeout(loadTasks, 300);
+    } catch (err) { 
+      toast.error(err.message, {
+        style: { background: '#1a1a2e', color: '#f87171', border: '1px solid #f87171' }
+      });
     }
   };
 
@@ -72,7 +97,9 @@ export default function KanbanBoard({ projectId, onTasksChange, onViewUser }) {
       await api.patch(`/tasks/${taskId}/status`, { status: newStatus });
       setTimeout(loadTasks, 300);
     } catch (err) { 
-      alert(err.message); 
+      toast.error(err.message, {
+        style: { background: '#1a1a2e', color: '#f87171', border: '1px solid #f87171' }
+      });
       loadTasks(); 
     }
   };
@@ -100,7 +127,9 @@ const saveEditTitle = async () => {
       setEditingTitleId(null);
       setTimeout(loadTasks, 300);
     } catch (err) {
-      alert(err.message);
+      toast.error(err.message, {
+        style: { background: '#1a1a2e', color: '#f87171', border: '1px solid #f87171' }
+      });
       setEditingTitleId(null);
     }
   };
@@ -125,34 +154,39 @@ const saveEditTitle = async () => {
 
   const batchDelete = async () => {
     if (selectedIds.size === 0) return;
-    if (confirm(`Удалить ${selectedIds.size} задач(и)?`)) {
-        for (const id of selectedIds) {
-          try { await api.delete(`/tasks/${id}`); } catch { /* ignore single failures */ }
-        }
-      setSelectedIds(new Set());
-      setTimeout(loadTasks, 300);
+    for (const id of selectedIds) {
+      try { await api.delete(`/tasks/${id}`); } catch { /* ignore single failures */ }
     }
+    toast(`${selectedIds.size} задач удалено`, {
+      icon: '🗑️',
+      style: { background: '#1a1a2e', color: '#e4e4e7', border: '1px solid #f87171' }
+    });
+    setSelectedIds(new Set());
+    setTimeout(loadTasks, 300);
   };
 
   const batchStatus = async (status) => {
     if (selectedIds.size === 0) return;
-    if (confirm(`Сменить статус на "${status}" для ${selectedIds.size} задач?`)) {
-          for (const id of selectedIds) {
-            try { await api.patch(`/tasks/${id}/status`, { status }); } catch { /* ignore single failures */ }
-          }
-      setSelectedIds(new Set());
-      setTimeout(loadTasks, 300);
+    for (const id of selectedIds) {
+      try { await api.patch(`/tasks/${id}/status`, { status }); } catch { /* ignore single failures */ }
     }
+    toast(`Статус ${selectedIds.size} задач изменён на "${status}"`, {
+      style: { background: '#1a1a2e', color: '#60a5fa', border: '1px solid #60a5fa' }
+    });
+    setSelectedIds(new Set());
+    setTimeout(loadTasks, 300);
   };
 
   useEffect(() => {
     loadTasks();
     loadMembers();
+    loadMilestones();
     
     if (Notification.permission === 'default') {
       Notification.requestPermission();
     }
 
+    const userId = Number(localStorage.getItem('userId'));
     const ws = new WebSocket('ws://localhost:8000/ws');
     ws.onopen = () => console.log('✅ WebSocket подключен');
     ws.onmessage = (event) => {
@@ -160,6 +194,16 @@ const saveEditTitle = async () => {
         const data = JSON.parse(event.data);
         if (data.project_id === Number(projectId)) {
           loadTasks();
+          
+          // Push-уведомление через тост, если назначили этого пользователя
+          if (data.assignee_id && Number(data.assignee_id) === userId) {
+            toast(`Вас назначили ответственным за задачу`, {
+              icon: '📋',
+              duration: 6000,
+              style: { background: '#1a1a2e', color: '#c4b5fd', border: '1px solid #8b5cf6' }
+            });
+          }
+
           if (Notification.permission === 'granted' && data.action) {
             new Notification('SmartSync', { body: `Изменение в задаче: ${data.action}` });
           }
@@ -167,7 +211,7 @@ const saveEditTitle = async () => {
       } catch (e) { console.error(e); }
     };
     return () => { if (ws.readyState === 1) ws.close(); };
-  }, [loadTasks, loadMembers, projectId]);
+  }, [loadTasks, loadMembers, loadMilestones, projectId]);
 
   // Фильтрация
   let filteredTasks = tasks.filter(t => {
@@ -178,6 +222,9 @@ const saveEditTitle = async () => {
     if (filterAssignee === 'me' && t.assignee_id !== Number(localStorage.getItem('userId'))) return false;
     if (filterAssignee !== 'all' && filterAssignee !== 'me' && filterAssignee !== 'assigned' && filterAssignee !== 'unassigned') {
       if (t.assignee_id !== Number(filterAssignee)) return false;
+    }
+    if (filterMilestone !== 'all') {
+      if (Number(t.milestone_id) !== Number(filterMilestone)) return false;
     }
     return true;
   });
@@ -232,7 +279,25 @@ const saveEditTitle = async () => {
               <option value="unassigned">Не назначены</option>
               {members.map(m => <option key={m.user_id} value={m.user_id}>{m.username}</option>)}
             </select>
+            {/* Фильтр по вехам */}
+            <select value={filterMilestone} onChange={e => setFilterMilestone(e.target.value)}
+              className="text-xs border rounded-lg p-1.5 outline-none" style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-secondary)', borderColor: 'var(--border)' }}>
+              <option value="all">Все вехи</option>
+              <option value="none">Без вехи</option>
+              {milestones.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}
+            </select>
           </div>
+          {/* Тумблер критического пути */}
+          <button
+            onClick={() => setShowCritical(!showCritical)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+              showCritical ? 'bg-red-50 text-red-600 border border-red-200' : 'border border-gray-200 text-gray-500 hover:bg-gray-50'
+            }`}
+            title="Показать узкие места"
+          >
+            <Flame size={14} className={showCritical ? 'text-red-500' : ''} />
+            Крит. путь
+          </button>
           {/* Batch-панель */}
           {selectedIds.size > 0 && (
             <div className="flex items-center gap-2 bg-blue-50 px-3 py-1.5 rounded-lg">
@@ -287,7 +352,9 @@ const saveEditTitle = async () => {
   onDragStart={e => { e.stopPropagation(); e.dataTransfer.setData('taskId', task.id); e.currentTarget.classList.add('dragging'); }}
   onDragEnd={e => { e.stopPropagation(); e.currentTarget.classList.remove('dragging'); }}
   onClick={(e) => { e.stopPropagation(); setEditingTask(task); setIsModalOpen(true); }}
-  className="task-card relative bg-white p-4 rounded-2xl shadow-sm border-2 transition-all cursor-pointer group"
+  className={`task-card relative bg-white p-4 rounded-2xl shadow-sm border-2 transition-all cursor-pointer group ${
+    showCritical && isCritical ? 'ring-2 ring-red-400 ring-offset-2' : ''
+  } ${showCritical && !isCritical ? 'opacity-40' : ''}`}
   style={{ borderColor: isCritical ? '#fecaca' : 'var(--border)' }}>
                         <div className="flex justify-between items-start">
                           <div className="flex items-center gap-2">
@@ -296,6 +363,7 @@ const saveEditTitle = async () => {
                               {selectedIds.has(task.id) ? <CheckSquare size={12} /> : <Square size={12} />}
                             </button>
                             <span className="text-[10px] font-black uppercase" style={{ color: isCritical ? '#ef4444' : 'var(--text-muted)' }}>ID-{task.id}</span>
+                            {isCritical && <Flame size={12} className="text-red-500" />}
                           </div>
                           <button onClick={e => deleteTask(e, task.id)} className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: 'var(--text-muted)' }}><Trash2 size={14} /></button>
                         </div>
@@ -325,6 +393,11 @@ const saveEditTitle = async () => {
                           </div>
                         ) : null}
 
+                        {/* Дата создания */}
+                        <div className="text-[9px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                          Создано: {createdDate.toLocaleDateString('ru-RU')}
+                        </div>
+
                         <div className="flex items-center justify-between mt-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
                           <span className="text-[10px] font-bold" style={{ color: 'var(--text-secondary)' }}>{task.duration_hours ? `${task.duration_hours.toFixed(1)} ч.` : '0 ч.'}</span>
                           <div className="flex items-center gap-1.5">
@@ -351,7 +424,7 @@ const saveEditTitle = async () => {
           </div>
         </div>
 
-        <TaskModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSaveTask} initialData={editingTask} projectId={projectId} />  
+        <TaskModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSaveTask} initialData={editingTask} projectId={projectId} milestones={milestones} />  
       </div>
     </div>
   );
