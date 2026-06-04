@@ -27,7 +27,7 @@ export default function ProjectSettingsModal({ isOpen, onClose, projectId, onPro
   const handleRename = async () => {
     if (!newName.trim()) return;
     try {
-      await api.patch(`/projects/${projectId}`, { name: newName.trim() });
+      await api.put(`/projects/${projectId}`, { name: newName.trim() });
       toast.success('Проект переименован', {
         style: { background: '#1a1a2e', color: '#7ac9a7', border: '1px solid #7ac9a7' }
       });

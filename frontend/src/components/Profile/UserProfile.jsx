@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { api } from '../../api/client';
 import { Save, User, History } from 'lucide-react';
+import { toast } from 'react-hot-toast';
 
 export default function UserProfile() {
   const [profile, setProfile] = useState({
@@ -18,7 +19,7 @@ export default function UserProfile() {
       const data = await api.get('/user/profile');
       if (data) {
         setProfile(prev => ({ ...prev, ...data }));
-        // ФИКС (Пункт 6): Сохраняем ID из профиля, чтобы он не терялся
+        // ФИКС: Сохраняем ID из профиля, чтобы он не терялся
         if (data.id) {
           localStorage.setItem('userId', data.id);
           setUserId(data.id);
@@ -35,7 +36,7 @@ export default function UserProfile() {
         const fetchedLogs = logs || [];
         setAuditLogs(fetchedLogs);
 
-        // ФИКС (Пункт 2): Безопасный сбор имен без bulk, который блокировался
+        // Безопасный сбор имен
         const userIds = [...new Set(fetchedLogs.map(l => l.user_id).filter(Boolean))];
         const namesMap = {};
         for (const id of userIds) {
@@ -43,9 +44,7 @@ export default function UserProfile() {
             const u = await api.get(`/users/${id}`);
             if (u && u.username) namesMap[id] = u.username;
           } catch (err) {
-
       console.error("Ошибка загрузки истории аудита:", err);
-
     }
         }
         setUserNames(namesMap);
@@ -61,11 +60,16 @@ export default function UserProfile() {
   const handleSave = async () => {
     try {
       await api.put('/user/profile', profile);
-      alert('Данные успешно обновлены!');
-    } catch (err) { alert('Ошибка: ' + err.message); }
+      toast.success('Данные успешно обновлены!', {
+        style: { background: '#1a1a2e', color: '#7ac9a7', border: '1px solid #7ac9a7' }
+      });
+    } catch (err) { 
+      toast.error('Ошибка: ' + err.message, {
+        style: { background: '#1a1a2e', color: '#f87171', border: '1px solid #f87171' }
+      });
+    }
   };
 
-  // ФИКС (Пункт 3): Убрали bg-white, используем переменные темы (var(--bg-card))
   return (
     <div className="h-full w-full p-6 overflow-y-auto" style={{ backgroundColor: 'var(--bg-page)', color: 'var(--text-primary)' }}>
       <div className="w-full max-w-4xl mx-auto space-y-6">
@@ -83,15 +87,22 @@ export default function UserProfile() {
               <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center shadow-inner text-3xl font-black uppercase">
                 {profile?.full_name ? profile.full_name.charAt(0) : (profile?.username ? profile.username.charAt(0) : <User size={40} />)}
               </div>
-              <div>
+              <div className="flex-1">
                 <input 
-  className="text-xl font-bold bg-transparent border-b border-dashed outline-none mb-1 pb-1"
+  className="text-xl font-bold bg-transparent border-b border-dashed outline-none mb-1 pb-1 w-full"
   style={{ color: 'var(--text-primary)', borderColor: 'var(--border-hover)' }}
   value={profile.full_name || ''}
   placeholder="Ваше имя"
   onChange={e => setProfile({...profile, full_name: e.target.value})}
 />
-                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>ID пользователя: {userId || '—'}</p>
+                <div className="flex items-center gap-4 mt-1">
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                    Логин: <span className="font-semibold text-gray-700">{profile.username || '—'}</span>
+                  </p>
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                    ID: <span className="font-semibold text-gray-700">{userId || '—'}</span>
+                  </p>
+                </div>
               </div>
             </div>
 

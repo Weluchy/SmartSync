@@ -424,7 +424,7 @@ const saveEditTitle = async () => {
           </div>
         </div>
 
-        <TaskModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSaveTask} initialData={editingTask} projectId={projectId} milestones={milestones} />  
+        <TaskModal isOpen={isModalOpen} onClose={() => setIsModalOpen(false)} onSave={handleSaveTask} initialData={editingTask} projectId={projectId} milestones={milestones} onViewUser={onViewUser} />  
       </div>
     </div>
   );

@@ -7,9 +7,9 @@ import { toast } from 'react-hot-toast';
 import ProjectSettingsModal from './ProjectSettingsModal';
 
 const MICROSERVICES = [
-  { id: 'task', label: 'Task API', endpoint: '/api/health' },
-  { id: 'auth', label: 'Auth API', endpoint: '/api/auth/health' },
-  { id: 'math', label: 'Math Engine', endpoint: '/api/math/health' },
+  { id: 'task', label: 'Task API', endpoint: '/health' },
+  { id: 'auth', label: 'Auth API', endpoint: '/auth/health' },
+  { id: 'math', label: 'Math Engine', endpoint: '/math/health' },
 ];
 
 export default function Sidebar({ projects, currentProjectId, onSelectProject, onCreateProject, invitations = [], onProjectUpdated }) {
@@ -25,11 +25,8 @@ export default function Sidebar({ projects, currentProjectId, onSelectProject, o
     const results = {};
     for (const svc of MICROSERVICES) {
       try {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 5000);
-        const res = await fetch(svc.endpoint, { signal: controller.signal });
-        clearTimeout(timeout);
-        results[svc.id] = res.ok ? 'healthy' : 'down';
+        await api.get(svc.endpoint);
+        results[svc.id] = 'healthy';
       } catch {
         results[svc.id] = 'down';
       }

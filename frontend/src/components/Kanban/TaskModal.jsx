@@ -5,7 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import { api } from '../../api/client'; 
 import { toast } from 'react-hot-toast';
 
-export default function TaskModal({ isOpen, onClose, onSave, projectId, initialData, milestones = [] }) {
+export default function TaskModal({ isOpen, onClose, onSave, projectId, initialData, milestones = [], onViewUser }) {
   const [formData, setFormData] = useState({
     title: '', description: '', opt: 1, real: 2, pess: 3, status: 'todo'
   });
@@ -165,7 +165,12 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
                 {comments.length > 0 ? comments.map(c => (
                   <div key={c.id} className="bg-white border rounded-xl p-3 shadow-sm">
                     <div className="flex justify-between items-center mb-1">
-                      <span className="font-bold text-xs text-blue-600">{c.username || 'Пользователь'}</span>
+                      <span 
+                        className="font-bold text-xs text-blue-600 cursor-pointer hover:text-blue-800 hover:underline"
+                        onClick={() => onViewUser?.(c.user_id)}
+                      >
+                        {c.username || 'Пользователь'}
+                      </span>
                       <span className="text-[10px] text-gray-400">{new Date(c.created_at).toLocaleString('ru-RU')}</span>
                     </div>
                     <p className="text-sm text-gray-700 whitespace-pre-wrap">{c.text}</p>
@@ -219,5 +224,6 @@ TaskModal.propTypes = {
   onSave: PropTypes.func.isRequired,
   projectId: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
   initialData: PropTypes.object,
-  milestones: PropTypes.array
+  milestones: PropTypes.array,
+  onViewUser: PropTypes.func
 };

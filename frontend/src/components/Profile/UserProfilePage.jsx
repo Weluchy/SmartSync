@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { api } from '../../api/client';
-import { ArrowLeft, User, Clock, ListTodo } from 'lucide-react';
+import { ArrowLeft, Clock, ListTodo } from 'lucide-react';
 
 export default function UserProfilePage({ projectId, userId, onBack }) {
   const [user, setUser] = useState(null);
@@ -9,8 +9,10 @@ export default function UserProfilePage({ projectId, userId, onBack }) {
 
   useEffect(() => {
     if (!userId) return;
-    // Получаем данные пользователя (используем mock через bulk, т.к. GET /users/:id проксирован)
-    api.get(`/users/${userId}`).then(setUser).catch(() => setUser({ username: `ID ${userId}` }));
+    // Получаем данные пользователя
+    api.get(`/users/${userId}`).then(data => {
+      setUser(data);
+    }).catch(() => setUser({ username: `ID ${userId}`, full_name: '' }));
     
     // Загружаем задачи проекта и фильтруем по пользователю
     if (projectId) {
@@ -38,14 +40,19 @@ export default function UserProfilePage({ projectId, userId, onBack }) {
         <div className="rounded-2xl p-8 border shadow-xl" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
           <div className="flex items-center gap-6">
             <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center shadow-inner">
-              <User size={40} />
+              <span className="text-3xl font-black uppercase">
+                {user?.full_name ? user.full_name.charAt(0) : user?.username?.charAt(0) || '?'}
+              </span>
             </div>
             <div>
               <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>
-                {user?.username || 'Загрузка...'}
+                {user?.full_name || user?.username || 'Загрузка...'}
                 {isMe && <span className="ml-2 text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full">Это вы</span>}
               </h2>
-              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>ID пользователя: {userId}</p>
+              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                Логин: {user?.username || `ID ${userId}`} · ID: {userId}
+              </p>
+              {user?.stack && <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{user.stack}</p>}
             </div>
           </div>
         </div>
@@ -92,7 +99,7 @@ export default function UserProfilePage({ projectId, userId, onBack }) {
                     task.status === 'done' ? 'bg-green-100 text-green-700' : 
                     task.status === 'in_progress' ? 'bg-blue-100 text-blue-700' : 
                     'bg-gray-100 text-gray-600'
-                  }`}>{task.status}</span>
+                  }`}>{task.status === 'done' ? 'Готово' : task.status === 'in_progress' ? 'В работе' : 'Бэклог'}</span>
                 </div>
               ))}
             </div>
