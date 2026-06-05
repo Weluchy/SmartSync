@@ -53,10 +53,15 @@ func (r *TaskRepository) CreateTask(t *models.Task) (int, error) {
 	if t.AssigneeID != nil && *t.AssigneeID != 0 {
 		assignee = *t.AssigneeID
 	}
+	// ДОБАВЛЕНО: Парсим жесткий дедлайн
+	var deadline interface{} = nil
+	if t.DeadlineAt != nil && *t.DeadlineAt > 0 {
+		deadline = *t.DeadlineAt
+	}
 
-	err := r.db.QueryRow(`INSERT INTO tasks (title, description, opt, real, pess, user_id, project_id, status, assignee_id, created_at) 
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'todo', $8, NOW()) RETURNING id`,
-		t.Title, t.Description, t.Opt, t.Real, t.Pess, t.UserID, t.ProjectID, assignee).Scan(&id)
+	err := r.db.QueryRow(`INSERT INTO tasks (title, description, opt, real, pess, user_id, project_id, status, assignee_id, deadline_at, created_at) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'todo', $8, $9, NOW()) RETURNING id`,
+		t.Title, t.Description, t.Opt, t.Real, t.Pess, t.UserID, t.ProjectID, assignee, deadline).Scan(&id)
 	return id, err
 }
 
@@ -73,9 +78,15 @@ func (r *TaskRepository) UpdateTask(t *models.Task) error {
 	if t.AssigneeID != nil && *t.AssigneeID != 0 {
 		assignee = *t.AssigneeID
 	}
+	// ДОБАВЛЕНО: Парсим жесткий дедлайн
+	var deadline interface{} = nil
+	if t.DeadlineAt != nil && *t.DeadlineAt > 0 {
+		deadline = *t.DeadlineAt
+	}
 
-	_, err = r.db.Exec(`UPDATE tasks SET title = $1, description = $2, opt = $3, real = $4, pess = $5, assignee_id = $6 WHERE id = $7`,
-		t.Title, t.Description, t.Opt, t.Real, t.Pess, assignee, t.ID)
+	// ДОБАВЛЕНО: deadline_at = $7 в запрос
+	_, err = r.db.Exec(`UPDATE tasks SET title = $1, description = $2, opt = $3, real = $4, pess = $5, assignee_id = $6, deadline_at = $7 WHERE id = $8`,
+		t.Title, t.Description, t.Opt, t.Real, t.Pess, assignee, deadline, t.ID)
 	return err
 }
 

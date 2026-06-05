@@ -340,20 +340,29 @@ const saveEditTitle = async () => {
                     const createdDate = new Date(task.created_at);
                     const isDateValid = createdDate.getFullYear() > 2000;
                     
-                    // СЧИТАЕМ ВРЕМЯ НА ЛЕТУ: если бэкенд отдал 0, применяем формулу PERT
-                    const duration = task.duration_hours || ((task.opt + 4 * task.real + task.pess) / 6);
+                   const duration = task.duration_hours || ((task.opt + 4 * task.real + task.pess) / 6);
                     
                     let deadlineStr = '', exactDate = '';
-                    if (isDateValid && duration > 0) {
-                      const deadline = new Date(createdDate.getTime() + (duration * 3600000));
+                    let deadlineTime = 0;
+
+                    // Умный выбор: Хард-дедлайн или Agile-дедлайн
+                    if (task.deadline_at && task.deadline_at > 0) {
+                      deadlineTime = task.deadline_at;
+                    } else if (isDateValid && duration > 0) {
+                      deadlineTime = createdDate.getTime() + (duration * 3600000);
+                    }
+
+                    if (deadlineTime > 0) {
+                      const deadline = new Date(deadlineTime);
                       exactDate = deadline.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
                       if (task.status === 'done') {
                         deadlineStr = 'Выполнено';
                       } else {
-                        const diff = deadline.getTime() - Date.now();
+                        const diff = deadlineTime - Date.now();
                         deadlineStr = diff < 0 ? 'Просрочено!' : `Ост. ${Math.floor(diff / 3600000)}ч ${Math.floor((diff % 3600000) / 60000)}м`;
                       }
                     }
+
                     return (
                       <motion.div key={task.id} layout initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.8 }} transition={{ duration: 0.2 }}
   draggable 
