@@ -39,8 +39,10 @@ export default function KanbanBoard({ projectId, onTasksChange, onViewUser }) {
     if (!projectId) return;
     try {
       const data = await api.get(`/projects/${projectId}/tasks`);
-      setTasks(data || []);
-      if (onTasksChange) onTasksChange(data || []);
+      // Эндпоинт возвращает {tasks: [...], dependencies: [...]}
+      const taskList = data?.tasks || data || [];
+      setTasks(taskList);
+      if (onTasksChange) onTasksChange(taskList);
     } catch (err) { console.error(err); }
   }, [projectId, onTasksChange]);
 

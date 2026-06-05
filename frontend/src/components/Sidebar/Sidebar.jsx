@@ -7,9 +7,9 @@ import { toast } from 'react-hot-toast';
 import ProjectSettingsModal from './ProjectSettingsModal';
 
 const MICROSERVICES = [
-  { id: 'task', label: 'Task API', endpoint: '/health' },
-  { id: 'auth', label: 'Auth API', endpoint: '/auth/health' },
-  { id: 'math', label: 'Math Engine', endpoint: '/math/health' },
+  { id: 'task', label: 'Task API' },
+  { id: 'auth', label: 'Auth API' },
+  { id: 'math', label: 'Math Engine' },
 ];
 
 export default function Sidebar({ projects, currentProjectId, onSelectProject, onCreateProject, invitations = [], onProjectUpdated }) {
@@ -20,13 +20,43 @@ export default function Sidebar({ projects, currentProjectId, onSelectProject, o
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [servicesStatus, setServicesStatus] = useState({});
 
-  // Пинг микросервисов
+  // Пинг микросервисов — проверяем доступность через существующие эндпоинты
   const pingServices = useCallback(async () => {
     const results = {};
     for (const svc of MICROSERVICES) {
       try {
-        await api.get(svc.endpoint);
-        results[svc.id] = 'healthy';
+        // Используем api клиент с AbortController для таймаута
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 5000);
+        const GATEWAY = import.meta.env.VITE_GATEWAY_URL || "/api";
+        const token = localStorage.getItem('token');
+        const headers = { 
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        };
+        
+        let res;
+        if (svc.id === 'task') {
+          // Шлём быстрый запрос на существующий эндпоинт task-service
+          res = await fetch(`${GATEWAY}/search?q=health_check_ping`, { 
+            headers, 
+            signal: controller.signal 
+          });
+        } else if (svc.id === 'auth') {
+          // Auth — используем health эндпоинт
+          res = await fetch(`${GATEWAY}/user/profile`, { 
+            headers,
+            signal: controller.signal 
+          });
+        } else if (svc.id === 'math') {
+          // Math engine — нет отдельного эндпоинта. Проверяем через график (он триггерит пересчёт мат. движка)
+          res = await fetch(`${GATEWAY}/projects/0/graph`, { 
+            headers,
+            signal: controller.signal 
+          });
+        }
+        clearTimeout(timeout);
+        results[svc.id] = res?.status !== 502 && res?.status !== 503 ? 'healthy' : 'down';
       } catch {
         results[svc.id] = 'down';
       }
