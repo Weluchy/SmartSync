@@ -14,7 +14,13 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
   const [newComment, setNewComment] = useState('');
   const [isPreview, setIsPreview] = useState(false); // Для Markdown
   const [activeTab, setActiveTab] = useState('details'); // details, logs, comments
-
+// Помощник для правильного отображения локального времени в инпуте
+  const formatLocalDatetime = (ms) => {
+    if (!ms) return '';
+    const d = new Date(ms);
+    const pad = (n) => n.toString().padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  };
   useEffect(() => {
     if (isOpen && projectId) {
       api.get(`/projects/${projectId}/members`).then(data => setMembers(data || []));
@@ -27,7 +33,7 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
         assignee_id: initialData.assignee_id ?? '',
         milestone_id: initialData.milestone_id ?? '',
         // Добавляем конвертацию миллисекунд в формат для <input type="datetime-local">
-        deadline_at: initialData.deadline_at ? new Date(initialData.deadline_at).toISOString().slice(0, 16) : ''
+        deadline_at: initialData.deadline_at ? formatLocalDatetime(initialData.deadline_at) : ''
       });
       if (initialData.id) {
         // Грузим логи

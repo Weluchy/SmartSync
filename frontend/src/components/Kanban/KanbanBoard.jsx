@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../../api/client';
-import { Plus, Trash2, Search, Filter, Clock, CheckSquare, Square, ArrowUpDown, Flame } from 'lucide-react';
+import { Plus, Trash2, Search, Filter, Clock, CheckSquare, Square, ArrowUpDown, Flame, Target } from 'lucide-react';
 import TaskModal from './TaskModal';
 import { toast } from 'react-hot-toast';
 
@@ -340,7 +340,7 @@ const saveEditTitle = async () => {
                     const createdDate = new Date(task.created_at);
                     const isDateValid = createdDate.getFullYear() > 2000;
                     
-                   const duration = task.duration_hours || ((task.opt + 4 * task.real + task.pess) / 6);
+                    const duration = task.duration_hours || ((task.opt + 4 * task.real + task.pess) / 6);
                     
                     let deadlineStr = '', exactDate = '';
                     let deadlineTime = 0;
@@ -359,11 +359,34 @@ const saveEditTitle = async () => {
                         deadlineStr = 'Выполнено';
                       } else {
                         const diff = deadlineTime - Date.now();
-                        deadlineStr = diff < 0 ? 'Просрочено!' : `Ост. ${Math.floor(diff / 3600000)}ч ${Math.floor((diff % 3600000) / 60000)}м`;
+                        if (diff < 0) {
+                          deadlineStr = 'Просрочено!';
+                        } else {
+                          // Красивое разделение на месяцы, недели, дни, часы и минуты
+                          const totalDays = Math.floor(diff / (1000 * 60 * 60 * 24));
+                          const months = Math.floor(totalDays / 30);
+                          const weeks = Math.floor((totalDays % 30) / 7);
+                          const days = (totalDays % 30) % 7;
+                          const hours = Math.floor((diff / (1000 * 60 * 60)) % 24);
+                          const mins = Math.floor((diff / 1000 / 60) % 60);
+
+                          let parts = [];
+                          if (months > 0) parts.push(`${months} мес.`);
+                          if (weeks > 0) parts.push(`${weeks} нед.`);
+                          if (days > 0) parts.push(`${days} дн.`);
+                          if (hours > 0 && months === 0) parts.push(`${hours} ч.`); // Скрываем часы, если счет идет на месяцы
+                          if (mins > 0 && totalDays === 0) parts.push(`${mins} мин.`); // Показываем минуты, только если осталось меньше суток
+                          
+                          deadlineStr = 'Ост. ' + (parts.join(' ') || '< 1 мин.');
+                        }
                       }
                     }
 
+                    // Находим название вехи (спринта) для этой карточки
+                    const taskMilestone = milestones.find(m => m.id === task.milestone_id);
+
                     return (
+
                       <motion.div key={task.id} layout initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.8 }} transition={{ duration: 0.2 }}
   draggable 
   onDragStart={e => { e.stopPropagation(); e.dataTransfer.setData('taskId', task.id); e.currentTarget.classList.add('dragging'); }}
@@ -374,15 +397,23 @@ const saveEditTitle = async () => {
   } ${showCritical && !isCritical ? 'opacity-40' : ''}`}
   style={{ borderColor: isCritical ? '#fecaca' : 'var(--border)' }}>
                         <div className="flex justify-between items-start">
-                          <div className="flex items-center gap-2">
+                          <div className="flex items-center gap-2 flex-wrap">
                             <button onClick={e => { e.stopPropagation(); toggleSelect(task.id); }}
                               className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: 'var(--text-muted)' }}>
                               {selectedIds.has(task.id) ? <CheckSquare size={12} /> : <Square size={12} />}
                             </button>
                             <span className="text-[10px] font-black uppercase" style={{ color: isCritical ? '#ef4444' : 'var(--text-muted)' }}>ID-{task.id}</span>
+                            
+                            {/* БЕЙДЖ ВЕХИ */}
+                            {taskMilestone && (
+                              <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 flex items-center gap-1 border border-purple-200">
+                                <Target size={10} /> {taskMilestone.title}
+                              </span>
+                            )}
+                            
                             {isCritical && <Flame size={12} className="text-red-500" />}
                           </div>
-                          <button onClick={e => deleteTask(e, task.id)} className="opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: 'var(--text-muted)' }}><Trash2 size={14} /></button>
+                          <button onClick={e => deleteTask(e, task.id)} className="opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0" style={{ color: 'var(--text-muted)' }}><Trash2 size={14} /></button>
                         </div>
 
                         {/* Inline-редактирование названия */}
@@ -442,8 +473,8 @@ const saveEditTitle = async () => {
                         )}
 
                         {/* Дата создания */}
-                        <div className="text-[9px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                          Создано: {createdDate.toLocaleDateString('ru-RU')}
+                        <div className="text-[9px] mt-2" style={{ color: 'var(--text-muted)' }}>
+                          Создано: {createdDate.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                         </div>
 
                         <div className="flex items-center justify-between mt-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>

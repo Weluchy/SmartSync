@@ -391,12 +391,13 @@ func getEnv(key, fallback string) string {
 }
 
 type taskForCheck struct {
-	ID        int
-	Title     string
-	ProjectID int
-	Status    string
-	CreatedAt time.Time
-	DurHours  float64
+	ID         int
+	Title      string
+	ProjectID  int
+	Status     string
+	CreatedAt  time.Time
+	DurHours   float64
+	DeadlineAt sql.NullInt64 // Читаем наше BIGINT поле
 }
 
 func main() {
@@ -428,9 +429,9 @@ func main() {
 		select {
 		case <-ticker.C:
 			rows, err := db.Query(`
-				SELECT id, title, project_id, status, created_at, duration_hours 
+				SELECT id, title, project_id, status, created_at, duration_hours, deadline_at 
 				FROM tasks 
-				WHERE status != 'done' AND duration_hours > 0
+				WHERE status != 'done' AND (duration_hours > 0 OR deadline_at > 0)
 			`)
 			if err != nil {
 				log.Println("Deadline: ошибка запроса:", err)
@@ -439,9 +440,16 @@ func main() {
 
 			for rows.Next() {
 				var t taskForCheck
-				rows.Scan(&t.ID, &t.Title, &t.ProjectID, &t.Status, &t.CreatedAt, &t.DurHours)
+				rows.Scan(&t.ID, &t.Title, &t.ProjectID, &t.Status, &t.CreatedAt, &t.DurHours, &t.DeadlineAt)
 
-				deadline := t.CreatedAt.Add(time.Duration(t.DurHours) * time.Hour)
+				// ВЫБИРАЕМ: Жесткий дедлайн ИЛИ PERT-дедлайн
+				var deadline time.Time
+				if t.DeadlineAt.Valid && t.DeadlineAt.Int64 > 0 {
+					deadline = time.UnixMilli(t.DeadlineAt.Int64)
+				} else {
+					deadline = t.CreatedAt.Add(time.Duration(t.DurHours) * time.Hour)
+				}
+
 				timeLeft := time.Until(deadline)
 
 				// Уведомления за 24ч, 6ч, 1ч до дедлайна
@@ -452,7 +460,6 @@ func main() {
 				} else if timeLeft > 0 && timeLeft < 2*time.Hour && timeLeft > 30*time.Minute {
 					publishDeadline(nc, t, "1ч", timeLeft)
 				} else if timeLeft < 0 && timeLeft > -1*time.Hour {
-					// Только что просрочена
 					publishDeadline(nc, t, "просрочена", timeLeft)
 				}
 			}
@@ -10051,17 +10058,30 @@ const saveEditTitle = async () => {
                     const isCritical = task.priority_score >= (maxScore * 0.8) && task.priority_score > 0 && task.status !== 'done';
                     const createdDate = new Date(task.created_at);
                     const isDateValid = createdDate.getFullYear() > 2000;
+                    
+                   const duration = task.duration_hours || ((task.opt + 4 * task.real + task.pess) / 6);
+                    
                     let deadlineStr = '', exactDate = '';
-                    if (isDateValid && task.duration_hours > 0) {
-                      const deadline = new Date(createdDate.getTime() + (task.duration_hours * 3600000));
+                    let deadlineTime = 0;
+
+                    // Умный выбор: Хард-дедлайн или Agile-дедлайн
+                    if (task.deadline_at && task.deadline_at > 0) {
+                      deadlineTime = task.deadline_at;
+                    } else if (isDateValid && duration > 0) {
+                      deadlineTime = createdDate.getTime() + (duration * 3600000);
+                    }
+
+                    if (deadlineTime > 0) {
+                      const deadline = new Date(deadlineTime);
                       exactDate = deadline.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
                       if (task.status === 'done') {
                         deadlineStr = 'Выполнено';
                       } else {
-                        const diff = deadline.getTime() - Date.now();
+                        const diff = deadlineTime - Date.now();
                         deadlineStr = diff < 0 ? 'Просрочено!' : `Ост. ${Math.floor(diff / 3600000)}ч ${Math.floor((diff % 3600000) / 60000)}м`;
                       }
                     }
+
                     return (
                       <motion.div key={task.id} layout initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, scale: 0.8 }} transition={{ duration: 0.2 }}
   draggable 
@@ -10099,7 +10119,7 @@ const saveEditTitle = async () => {
 
                         {task.description && <p className="text-[11px] mt-1.5 line-clamp-2" style={{ color: 'var(--text-muted)' }}>{task.description.length > 60 ? `${task.description.substring(0, 60)}...` : task.description}</p>}
                         
-                        {isDateValid && task.duration_hours > 0 ? (
+                        {isDateValid && duration > 0 ? (
                           <div className={`mt-3 rounded-xl p-3 border ${
                             task.status === 'done' ? 'bg-green-50 border-green-200' : 
                             deadlineStr === 'Просрочено!' ? 'bg-red-50 border-red-200' : 
@@ -10125,12 +10145,14 @@ const saveEditTitle = async () => {
                                 deadlineStr === 'Просрочено!' ? 'text-red-500' : 
                                 'text-amber-500'
                               }`}>
-                                {task.duration_hours.toFixed(1)} ч
+                                {duration.toFixed(1)} ч
                               </span>
                             </div>
-                            <div className="text-[10px] mt-1 font-medium" style={{ color: 'var(--text-muted)' }}>
-                              Дедлайн: {exactDate}
-                            </div>
+                            {task.status !== 'done' && (
+                              <div className="text-[10px] mt-1 font-medium" style={{ color: 'var(--text-muted)' }}>
+                                Дедлайн: {exactDate}
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <div className="mt-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
@@ -10144,7 +10166,7 @@ const saveEditTitle = async () => {
                         </div>
 
                         <div className="flex items-center justify-between mt-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                          <span className="text-[10px] font-bold" style={{ color: 'var(--text-secondary)' }}>{task.duration_hours ? `${task.duration_hours.toFixed(1)} ч.` : '0 ч.'}</span>
+                          <span className="text-[10px] font-bold" style={{ color: 'var(--text-secondary)' }}>{duration.toFixed(1)} ч.</span>
                           <div className="flex items-center gap-1.5">
                             <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center text-[8px] text-white font-bold cursor-pointer hover:opacity-80 transition-opacity" 
                               onClick={e => { e.stopPropagation(); onViewUser?.(task.user_id); }} title="Профиль автора">
@@ -10188,8 +10210,7 @@ import ReactMarkdown from 'react-markdown';
 import { api } from '../../api/client'; 
 import { toast } from 'react-hot-toast';
 
-export default function TaskModal({ isOpen, onClose, onSave, projectId, initialData, milestones = [], onViewUser }) {
-  const [formData, setFormData] = useState({
+export default function TaskModal({ isOpen, onClose, onSave, projectId, initialData, milestones, onViewUser }) {  const [formData, setFormData] = useState({
     title: '', description: '', opt: 1, real: 2, pess: 3, status: 'todo'
   });
   const [members, setMembers] = useState([]);
@@ -10209,7 +10230,9 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
         ...initialData, 
         description: initialData.description || '', 
         assignee_id: initialData.assignee_id ?? '',
-        milestone_id: initialData.milestone_id ?? ''
+        milestone_id: initialData.milestone_id ?? '',
+        // Добавляем конвертацию миллисекунд в формат для <input type="datetime-local">
+        deadline_at: initialData.deadline_at ? new Date(initialData.deadline_at).toISOString().slice(0, 16) : ''
       });
       if (initialData.id) {
         // Грузим логи
@@ -10218,7 +10241,7 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
         api.get(`/tasks/${initialData.id}/comments`).then(res => setComments(res || [])).catch(() => {});
       }
     } else {
-      setFormData({ title: '', description: '', opt: 1, real: 2, pess: 3, status: 'todo', assignee_id: '', milestone_id: '' });
+      setFormData({ title: '', description: '', opt: 1, real: 2, pess: 3, status: 'todo', assignee_id: '', milestone_id: '', deadline_at: '' });
       setLogs([]); 
       setComments([]);
       setActiveTab('details');
@@ -10233,6 +10256,7 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
       ...formData,
       assignee_id: formData.assignee_id ? parseInt(formData.assignee_id, 10) : null,
       milestone_id: formData.milestone_id ? parseInt(formData.milestone_id, 10) : null,
+      deadline_at: formData.deadline_at ? new Date(formData.deadline_at).getTime() : null, // <-- Добавлено
       opt: parseInt(formData.opt, 10) || 0,
       real: parseInt(formData.real, 10) || 0,
       pess: parseInt(formData.pess, 10) || 0,
@@ -10323,21 +10347,30 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
                 </div>
               </div>
 
-              <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Исполнитель</label>
-                <select className="w-full border rounded-lg p-2.5 bg-white outline-none shadow-sm" value={formData.assignee_id || ''} onChange={e => setFormData({...formData, assignee_id: e.target.value})}>
-                  <option value="">Не назначен</option>
-                  {members.map(m => (<option key={m.user_id} value={m.user_id}>{m.username}</option>))}
-                </select>
-              </div>
-
-              {/* Привязка к вехе */}
-              <div>
-                <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Привязать к вехе</label>
-                <select className="w-full border rounded-lg p-2.5 bg-white outline-none shadow-sm" value={formData.milestone_id || ''} onChange={e => setFormData({...formData, milestone_id: e.target.value})}>
-                  <option value="">Без вехи</option>
-                  {milestones.map(m => (<option key={m.id} value={m.id}>{m.title}</option>))}
-                </select>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Исполнитель</label>
+                  <select className="w-full border rounded-lg p-2.5 bg-white outline-none shadow-sm text-xs" value={formData.assignee_id || ''} onChange={e => setFormData({...formData, assignee_id: e.target.value})}>
+                    <option value="">Не назначен</option>
+                    {members.map(m => (<option key={m.user_id} value={m.user_id}>{m.username}</option>))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Веха (Спринт)</label>
+                  <select className="w-full border rounded-lg p-2.5 bg-white outline-none shadow-sm text-xs" value={formData.milestone_id || ''} onChange={e => setFormData({...formData, milestone_id: e.target.value})}>
+                    <option value="">Без вехи</option>
+                    {milestones?.map(m => (<option key={m.id} value={m.id}>{m.title}</option>))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Жесткий Дедлайн</label>
+                  <input 
+                    type="datetime-local" 
+                    className="w-full border rounded-lg p-2 bg-white shadow-sm outline-none text-xs" 
+                    value={formData.deadline_at || ''} 
+                    onChange={e => setFormData({...formData, deadline_at: e.target.value})} 
+                  />
+                </div>
               </div>
             </form>
           )}
@@ -10679,13 +10712,9 @@ export default function UserProfile() {
   const handleSave = async () => {
     try {
       await api.put('/user/profile', profile);
-      toast.success('Данные успешно обновлены!', {
-        style: { background: '#1a1a2e', color: '#7ac9a7', border: '1px solid #7ac9a7' }
-      });
+      toast.success('Данные успешно обновлены!', { style: { background: '#1a1a2e', color: '#7ac9a7', border: '1px solid #7ac9a7' }});
     } catch (err) { 
-      toast.error('Ошибка: ' + err.message, {
-        style: { background: '#1a1a2e', color: '#f87171', border: '1px solid #f87171' }
-      });
+      toast.error('Ошибка: ' + err.message, { style: { background: '#1a1a2e', color: '#f87171', border: '1px solid #f87171' }}); 
     }
   };
 
@@ -11192,7 +11221,8 @@ export default function Sidebar({ projects, currentProjectId, onSelectProject, o
   const [selectedRole, setSelectedRole] = useState('viewer');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [servicesStatus, setServicesStatus] = useState({});
-
+  const [editingProject, setEditingProject] = useState(null);
+  const [newProjectName, setNewProjectName] = useState('');
   // Пинг микросервисов — проверяем доступность через существующие эндпоинты
   const pingServices = useCallback(async () => {
     const results = {};
@@ -11335,16 +11365,10 @@ const changeRole = async (userId, newRole) => {
             }`}
           >
             <span className="truncate text-sm font-medium">{p.name}</span>
-            <Settings2 
-              size={14} 
-              className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 cursor-pointer" 
-              onClick={(e) => {
-                e.stopPropagation();
-                if (currentProjectId) {
-                  setSettingsOpen(true);
-                }
-              }}
-            />
+<Settings2 size={14} 
+  className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-500" 
+  onClick={(e) => { e.stopPropagation(); setEditingProject(p); setNewProjectName(p.name); }} 
+/>
           </div>
         ))}
       </div>
@@ -11460,6 +11484,39 @@ const changeRole = async (userId, newRole) => {
         projectId={currentProjectId}
         onProjectUpdated={onProjectUpdated}
       />
+      {editingProject && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="p-6 rounded-2xl shadow-xl w-96 border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+            <h3 className="font-bold text-lg mb-4" style={{ color: 'var(--text-primary)' }}>Настройки проекта</h3>
+            <input 
+              value={newProjectName} 
+              onChange={e => setNewProjectName(e.target.value)}
+              className="w-full border p-3 rounded-xl mb-4 outline-none focus:ring-2 focus:ring-blue-500"
+              style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-primary)', borderColor: 'var(--border)' }}
+            />
+            <div className="flex gap-2">
+              <button onClick={async () => {
+                try {
+                  await api.put(`/projects/${editingProject.id}`, { name: newProjectName });
+                  toast.success('Проект переименован', { style: { background: '#1a1a2e', color: '#7ac9a7', border: '1px solid #7ac9a7' }});
+                  setEditingProject(null);
+                  window.location.reload(); // Быстрое обновление интерфейса
+                } catch (e) { toast.error(e.message); }
+              }} className="flex-1 bg-blue-600 text-white py-2.5 rounded-xl font-bold hover:bg-blue-700">Сохранить</button>
+              <button onClick={() => setEditingProject(null)} className="flex-1 border py-2.5 rounded-xl font-bold hover:bg-gray-50 text-gray-500">Отмена</button>
+            </div>
+            <button onClick={async () => {
+              if(confirm('Точно удалить проект навсегда? Все задачи будут стерты!')) {
+                try {
+                  await api.delete(`/projects/${editingProject.id}`);
+                  setEditingProject(null);
+                  window.location.reload();
+                } catch (e) { toast.error(e.message); }
+              }
+            }} className="w-full mt-6 text-red-500 text-xs font-bold hover:underline">Удалить проект</button>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }
@@ -13978,10 +14035,15 @@ func (r *TaskRepository) CreateTask(t *models.Task) (int, error) {
 	if t.AssigneeID != nil && *t.AssigneeID != 0 {
 		assignee = *t.AssigneeID
 	}
+	// ДОБАВЛЕНО: Парсим жесткий дедлайн
+	var deadline interface{} = nil
+	if t.DeadlineAt != nil && *t.DeadlineAt > 0 {
+		deadline = *t.DeadlineAt
+	}
 
-	err := r.db.QueryRow(`INSERT INTO tasks (title, description, opt, real, pess, user_id, project_id, status, assignee_id, created_at) 
-        VALUES ($1, $2, $3, $4, $5, $6, $7, 'todo', $8, NOW()) RETURNING id`,
-		t.Title, t.Description, t.Opt, t.Real, t.Pess, t.UserID, t.ProjectID, assignee).Scan(&id)
+	err := r.db.QueryRow(`INSERT INTO tasks (title, description, opt, real, pess, user_id, project_id, status, assignee_id, deadline_at, created_at) 
+        VALUES ($1, $2, $3, $4, $5, $6, $7, 'todo', $8, $9, NOW()) RETURNING id`,
+		t.Title, t.Description, t.Opt, t.Real, t.Pess, t.UserID, t.ProjectID, assignee, deadline).Scan(&id)
 	return id, err
 }
 
@@ -13998,9 +14060,15 @@ func (r *TaskRepository) UpdateTask(t *models.Task) error {
 	if t.AssigneeID != nil && *t.AssigneeID != 0 {
 		assignee = *t.AssigneeID
 	}
+	// ДОБАВЛЕНО: Парсим жесткий дедлайн
+	var deadline interface{} = nil
+	if t.DeadlineAt != nil && *t.DeadlineAt > 0 {
+		deadline = *t.DeadlineAt
+	}
 
-	_, err = r.db.Exec(`UPDATE tasks SET title = $1, description = $2, opt = $3, real = $4, pess = $5, assignee_id = $6 WHERE id = $7`,
-		t.Title, t.Description, t.Opt, t.Real, t.Pess, assignee, t.ID)
+	// ДОБАВЛЕНО: deadline_at = $7 в запрос
+	_, err = r.db.Exec(`UPDATE tasks SET title = $1, description = $2, opt = $3, real = $4, pess = $5, assignee_id = $6, deadline_at = $7 WHERE id = $8`,
+		t.Title, t.Description, t.Opt, t.Real, t.Pess, assignee, deadline, t.ID)
 	return err
 }
 
@@ -14143,18 +14211,22 @@ func (r *TaskRepository) GetTasksByProject(projectID, userID int) ([]models.Task
 		return nil, err
 	}
 	var tasks []models.Task
+
+	// ФИКС: Добавили t.created_at в конец SELECT
 	query := `SELECT t.id, t.project_id, t.user_id, t.assignee_id, t.title, t.description, t.status, t.opt, t.real, t.pess, 
-		COALESCE(t.duration_hours, 0.0), COALESCE(t.priority_score, 0.0), t.milestone_id, t.deadline_at,
-		COALESCE(t.duration_hours, 0.0), COALESCE(t.priority_score, 0.0)
+		COALESCE(t.duration_hours, 0.0), COALESCE(t.priority_score, 0.0), t.milestone_id, t.deadline_at, t.created_at 
 		FROM tasks t WHERE t.project_id = $1`
+
 	rows, err := r.db.Query(query, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+
 	for rows.Next() {
 		var t models.Task
-		rows.Scan(&t.ID, &t.ProjectID, &t.UserID, &t.AssigneeID, &t.Title, &t.Description, &t.Status, &t.Opt, &t.Real, &t.Pess, &t.DurationHours, &t.PriorityScore, &t.MilestoneID, &t.DeadlineAt, &t.DurationHours, &t.PriorityScore)
+		// ФИКС: Добавили &t.CreatedAt в самый конец списка Scan
+		rows.Scan(&t.ID, &t.ProjectID, &t.UserID, &t.AssigneeID, &t.Title, &t.Description, &t.Status, &t.Opt, &t.Real, &t.Pess, &t.DurationHours, &t.PriorityScore, &t.MilestoneID, &t.DeadlineAt, &t.CreatedAt)
 		tasks = append(tasks, t)
 	}
 	return tasks, nil
