@@ -37,7 +37,6 @@ func (r *TaskRepository) GetProjectIDByTask(taskID int) (int, error) {
 
 func (r *TaskRepository) GetByIDInternal(id int) (*models.Task, error) {
 	var t models.Task
-	// ТОЧЕЧНЫЙ ФИКС: Добавили description
 	err := r.db.QueryRow(`
 		SELECT id, project_id, status, title, description, user_id, assignee_id, opt, real, pess 
 		FROM tasks WHERE id = $1`, id).
@@ -50,7 +49,6 @@ func (r *TaskRepository) CreateTask(t *models.Task) (int, error) {
 		return 0, err
 	}
 	var id int
-	// ФИКС: Правильная проверка указателя
 	var assignee interface{} = nil
 	if t.AssigneeID != nil && *t.AssigneeID != 0 {
 		assignee = *t.AssigneeID
@@ -71,7 +69,6 @@ func (r *TaskRepository) UpdateTask(t *models.Task) error {
 		return err
 	}
 
-	// ФИКС: Правильная проверка указателя
 	var assignee interface{} = nil
 	if t.AssigneeID != nil && *t.AssigneeID != 0 {
 		assignee = *t.AssigneeID
@@ -87,14 +84,68 @@ func (r *TaskRepository) UpdateTaskStatus(taskID int, status string) error {
 	return err
 }
 
+// DeleteTask с поддержкой "сшивания" (heal) графа.
+// Если heal = true, то при удалении задачи:
+// 1. Находим все зависимости, где эта задача была depends_on (т.е. кто ссылался на неё)
+// 2. Находим все зависимости, где эта задача была task_id (т.е. на кого ссылалась она)
+// 3. Перенаправляем: все кто зависел от удаляемой — переключаем на те задачи, от которых зависела удаляемая
+// 4. Удаляем старые связи и саму задачу
 func (r *TaskRepository) DeleteTask(taskID, userID int, heal bool) error {
 	pid, err := r.GetProjectIDByTask(taskID)
 	if err != nil {
 		return err
 	}
-	if _, err := r.CheckAccess(pid, userID, models.RoleWeights[models.RoleAdmin]); err != nil {
+	if _, err := r.CheckAccess(pid, userID, models.RoleWeights[models.RoleEditor]); err != nil {
 		return err
 	}
+
+	if heal {
+		// Сшивание графа:
+		// 1. Кто зависел от удаляемой задачи (depends_on_id = taskID)
+		rowsDependents, err := r.db.Query(`SELECT task_id FROM dependencies WHERE depends_on_id = $1`, taskID)
+		if err == nil {
+			var dependents []int
+			for rowsDependents.Next() {
+				var tid int
+				rowsDependents.Scan(&tid)
+				dependents = append(dependents, tid)
+			}
+			rowsDependents.Close()
+
+			// 2. На кого ссылалась удаляемая задача (task_id = taskID)
+			rowsParents, err := r.db.Query(`SELECT depends_on_id FROM dependencies WHERE task_id = $1`, taskID)
+			var parents []int
+			if err == nil {
+				for rowsParents.Next() {
+					var pid int
+					rowsParents.Scan(&pid)
+					parents = append(parents, pid)
+				}
+				rowsParents.Close()
+			}
+
+			// 3. Сшиваем: все dependents перенаправляем на parents
+			// DELETE старых связей (где depends_on_id = taskID), INSERT новых
+			if len(parents) > 0 {
+				// Удаляем старые связи, где эта задача была depends_on
+				r.db.Exec(`DELETE FROM dependencies WHERE depends_on_id = $1`, taskID)
+				// Создаём новые: каждый dependent теперь зависит от каждого parent
+				for _, dep := range dependents {
+					for _, par := range parents {
+						// Проверяем, не создаст ли это цикл
+						r.db.Exec(`INSERT INTO dependencies (task_id, depends_on_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, dep, par)
+					}
+				}
+			} else {
+				// Нет родителей — просто удаляем связи, задачи становятся независимыми
+				r.db.Exec(`DELETE FROM dependencies WHERE depends_on_id = $1`, taskID)
+			}
+		}
+
+		// Удаляем все связи, где task_id = taskID (на кого ссылалась удаляемая)
+		r.db.Exec(`DELETE FROM dependencies WHERE task_id = $1`, taskID)
+	}
+
 	_, err = r.db.Exec("DELETE FROM tasks WHERE id = $1", taskID)
 	return err
 }
@@ -130,7 +181,6 @@ func (r *TaskRepository) GetGraphData(projectID, userID int) (*models.GraphData,
 	}
 	graph := &models.GraphData{}
 
-	// ТОЧЕЧНЫЙ ФИКС: Добавили description, user_id и assignee_id, чтобы Граф мог их показать
 	query := `
 		SELECT 
 			id, title, description, opt, real, pess, user_id, assignee_id,
@@ -168,9 +218,9 @@ func (r *TaskRepository) GetTasksByProject(projectID, userID int) ([]models.Task
 		return nil, err
 	}
 	var tasks []models.Task
-	// ТОЧЕЧНЫЙ ФИКС: Добавили description
 	query := `SELECT t.id, t.project_id, t.user_id, t.assignee_id, t.title, t.description, t.status, t.opt, t.real, t.pess, 
-		COALESCE(t.duration_hours, 0.0), COALESCE(t.priority_score, 0.0), t.milestone_id, t.deadline_at 
+		COALESCE(t.duration_hours, 0.0), COALESCE(t.priority_score, 0.0), t.milestone_id, t.deadline_at,
+		COALESCE(t.duration_hours, 0.0), COALESCE(t.priority_score, 0.0)
 		FROM tasks t WHERE t.project_id = $1`
 	rows, err := r.db.Query(query, projectID)
 	if err != nil {
@@ -179,7 +229,7 @@ func (r *TaskRepository) GetTasksByProject(projectID, userID int) ([]models.Task
 	defer rows.Close()
 	for rows.Next() {
 		var t models.Task
-		rows.Scan(&t.ID, &t.ProjectID, &t.UserID, &t.AssigneeID, &t.Title, &t.Description, &t.Status, &t.Opt, &t.Real, &t.Pess, &t.DurationHours, &t.PriorityScore, &t.MilestoneID, &t.DeadlineAt)
+		rows.Scan(&t.ID, &t.ProjectID, &t.UserID, &t.AssigneeID, &t.Title, &t.Description, &t.Status, &t.Opt, &t.Real, &t.Pess, &t.DurationHours, &t.PriorityScore, &t.MilestoneID, &t.DeadlineAt, &t.DurationHours, &t.PriorityScore)
 		tasks = append(tasks, t)
 	}
 	return tasks, nil

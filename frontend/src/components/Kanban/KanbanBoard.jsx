@@ -79,8 +79,10 @@ export default function KanbanBoard({ projectId, onTasksChange, onViewUser }) {
   const deleteTask = async (e, id) => {
     e.stopPropagation();
     try {
-      await api.delete(`/tasks/${id}`);
-      toast('Задача удалена', {
+      // heal=true — автоматическое сшивание графа: 
+      // зависевшие от удаляемой задачи переходят на те задачи, от которых зависела удаляемая
+      await api.delete(`/tasks/${id}?heal=true`);
+      toast('Задача удалена. Граф перестроен.', {
         icon: '🗑️',
         style: { background: '#1a1a2e', color: '#e4e4e7', border: '1px solid #f87171' }
       });
@@ -383,15 +385,44 @@ const saveEditTitle = async () => {
 
                         {task.description && <p className="text-[11px] mt-1.5 line-clamp-2" style={{ color: 'var(--text-muted)' }}>{task.description.length > 60 ? `${task.description.substring(0, 60)}...` : task.description}</p>}
                         
-                        {isDateValid ? (
-                          <div className="flex flex-col mt-2 text-[10px] font-bold" 
-                            style={{ color: task.status === 'done' ? '#10b981' : (deadlineStr === 'Просрочено!' ? '#ef4444' : '#f59e0b') }}>
-                            <div className="flex items-center gap-1"><Clock size={10} /> {task.duration_hours > 0 ? deadlineStr : "Без срока"}</div>
-                            {task.duration_hours > 0 && task.status !== 'done' && (
-                              <div className="text-gray-400 font-normal mt-0.5" style={{ color: 'var(--text-muted)' }}>До: {exactDate}</div>
-                            )}
+                        {isDateValid && task.duration_hours > 0 ? (
+                          <div className={`mt-3 rounded-xl p-3 border ${
+                            task.status === 'done' ? 'bg-green-50 border-green-200' : 
+                            deadlineStr === 'Просрочено!' ? 'bg-red-50 border-red-200' : 
+                            'bg-amber-50 border-amber-200'
+                          }`}>
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-1.5">
+                                <Clock size={12} className={
+                                  task.status === 'done' ? 'text-green-600' : 
+                                  deadlineStr === 'Просрочено!' ? 'text-red-600' : 
+                                  'text-amber-600'
+                                } />
+                                <span className={`text-[11px] font-black ${
+                                  task.status === 'done' ? 'text-green-700' : 
+                                  deadlineStr === 'Просрочено!' ? 'text-red-700' : 
+                                  'text-amber-700'
+                                }`}>
+                                  {task.status === 'done' ? '✅ Выполнено' : deadlineStr}
+                                </span>
+                              </div>
+                              <span className={`text-[9px] font-bold ${
+                                task.status === 'done' ? 'text-green-500' : 
+                                deadlineStr === 'Просрочено!' ? 'text-red-500' : 
+                                'text-amber-500'
+                              }`}>
+                                {task.duration_hours.toFixed(1)} ч
+                              </span>
+                            </div>
+                            <div className="text-[10px] mt-1 font-medium" style={{ color: 'var(--text-muted)' }}>
+                              Дедлайн: {exactDate}
+                            </div>
                           </div>
-                        ) : null}
+                        ) : (
+                          <div className="mt-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                            <div className="flex items-center gap-1"><Clock size={10} /> Без срока</div>
+                          </div>
+                        )}
 
                         {/* Дата создания */}
                         <div className="text-[9px] mt-1" style={{ color: 'var(--text-muted)' }}>
