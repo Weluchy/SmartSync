@@ -19,7 +19,8 @@ export default function Sidebar({ projects, currentProjectId, onSelectProject, o
   const [selectedRole, setSelectedRole] = useState('viewer');
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [servicesStatus, setServicesStatus] = useState({});
-
+  const [editingProject, setEditingProject] = useState(null);
+  const [newProjectName, setNewProjectName] = useState('');
   // Пинг микросервисов — проверяем доступность через существующие эндпоинты
   const pingServices = useCallback(async () => {
     const results = {};
@@ -162,16 +163,10 @@ const changeRole = async (userId, newRole) => {
             }`}
           >
             <span className="truncate text-sm font-medium">{p.name}</span>
-            <Settings2 
-              size={14} 
-              className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-600 cursor-pointer" 
-              onClick={(e) => {
-                e.stopPropagation();
-                if (currentProjectId) {
-                  setSettingsOpen(true);
-                }
-              }}
-            />
+<Settings2 size={14} 
+  className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-500" 
+  onClick={(e) => { e.stopPropagation(); setEditingProject(p); setNewProjectName(p.name); }} 
+/>
           </div>
         ))}
       </div>
@@ -287,6 +282,39 @@ const changeRole = async (userId, newRole) => {
         projectId={currentProjectId}
         onProjectUpdated={onProjectUpdated}
       />
+      {editingProject && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="p-6 rounded-2xl shadow-xl w-96 border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
+            <h3 className="font-bold text-lg mb-4" style={{ color: 'var(--text-primary)' }}>Настройки проекта</h3>
+            <input 
+              value={newProjectName} 
+              onChange={e => setNewProjectName(e.target.value)}
+              className="w-full border p-3 rounded-xl mb-4 outline-none focus:ring-2 focus:ring-blue-500"
+              style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-primary)', borderColor: 'var(--border)' }}
+            />
+            <div className="flex gap-2">
+              <button onClick={async () => {
+                try {
+                  await api.put(`/projects/${editingProject.id}`, { name: newProjectName });
+                  toast.success('Проект переименован', { style: { background: '#1a1a2e', color: '#7ac9a7', border: '1px solid #7ac9a7' }});
+                  setEditingProject(null);
+                  window.location.reload(); // Быстрое обновление интерфейса
+                } catch (e) { toast.error(e.message); }
+              }} className="flex-1 bg-blue-600 text-white py-2.5 rounded-xl font-bold hover:bg-blue-700">Сохранить</button>
+              <button onClick={() => setEditingProject(null)} className="flex-1 border py-2.5 rounded-xl font-bold hover:bg-gray-50 text-gray-500">Отмена</button>
+            </div>
+            <button onClick={async () => {
+              if(confirm('Точно удалить проект навсегда? Все задачи будут стерты!')) {
+                try {
+                  await api.delete(`/projects/${editingProject.id}`);
+                  setEditingProject(null);
+                  window.location.reload();
+                } catch (e) { toast.error(e.message); }
+              }
+            }} className="w-full mt-6 text-red-500 text-xs font-bold hover:underline">Удалить проект</button>
+          </div>
+        </div>
+      )}
     </aside>
   );
 }

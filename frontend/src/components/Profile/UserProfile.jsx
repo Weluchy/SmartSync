@@ -60,13 +60,9 @@ export default function UserProfile() {
   const handleSave = async () => {
     try {
       await api.put('/user/profile', profile);
-      toast.success('Данные успешно обновлены!', {
-        style: { background: '#1a1a2e', color: '#7ac9a7', border: '1px solid #7ac9a7' }
-      });
+      toast.success('Данные успешно обновлены!', { style: { background: '#1a1a2e', color: '#7ac9a7', border: '1px solid #7ac9a7' }});
     } catch (err) { 
-      toast.error('Ошибка: ' + err.message, {
-        style: { background: '#1a1a2e', color: '#f87171', border: '1px solid #f87171' }
-      });
+      toast.error('Ошибка: ' + err.message, { style: { background: '#1a1a2e', color: '#f87171', border: '1px solid #f87171' }}); 
     }
   };
 

@@ -5,8 +5,7 @@ import ReactMarkdown from 'react-markdown';
 import { api } from '../../api/client'; 
 import { toast } from 'react-hot-toast';
 
-export default function TaskModal({ isOpen, onClose, onSave, projectId, initialData, milestones = [], onViewUser }) {
-  const [formData, setFormData] = useState({
+export default function TaskModal({ isOpen, onClose, onSave, projectId, initialData, milestones, onViewUser }) {  const [formData, setFormData] = useState({
     title: '', description: '', opt: 1, real: 2, pess: 3, status: 'todo'
   });
   const [members, setMembers] = useState([]);
@@ -49,7 +48,7 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
     onSave({
       ...formData,
       assignee_id: formData.assignee_id ? parseInt(formData.assignee_id, 10) : null,
-      milestone_id: formData.milestone_id ? parseInt(formData.milestone_id, 10) : null,
+      milestone_id: formData.milestone_id ? parseInt(formData.milestone_id, 10) : null, // <-- Добавить эту строку
       opt: parseInt(formData.opt, 10) || 0,
       real: parseInt(formData.real, 10) || 0,
       pess: parseInt(formData.pess, 10) || 0,
@@ -138,6 +137,22 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
                   <label className="block text-[10px] font-black text-red-600 uppercase mb-1">Пессим. (ч)</label>
                   <input type="number" min="0" step="1" required className="w-full border rounded-lg p-2 bg-white shadow-sm outline-none" value={formData.pess} onChange={e => setFormData({...formData, pess: e.target.value})} />
                 </div>
+                <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Исполнитель</label>
+                  <select className="w-full border rounded-lg p-2.5 bg-white outline-none shadow-sm" value={formData.assignee_id || ''} onChange={e => setFormData({...formData, assignee_id: e.target.value})}>
+                    <option value="">Не назначен</option>
+                    {members.map(m => (<option key={m.user_id} value={m.user_id}>{m.username}</option>))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 uppercase mb-1">Веха (Спринт)</label>
+                  <select className="w-full border rounded-lg p-2.5 bg-white outline-none shadow-sm" value={formData.milestone_id || ''} onChange={e => setFormData({...formData, milestone_id: e.target.value})}>
+                    <option value="">Без вехи</option>
+                    {milestones?.map(m => (<option key={m.id} value={m.id}>{m.title}</option>))}
+                  </select>
+                </div>
+              </div>
               </div>
 
               <div>
