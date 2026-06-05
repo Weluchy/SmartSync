@@ -14,9 +14,8 @@ func NewStorage(db *sql.DB) *Storage {
 }
 
 func (s *Storage) GetProjectTasks(projectID int) ([]models.Task, error) {
-	// ПРИКАЗ: Добавили status в SELECT
 	rows, err := s.db.Query(`
-		SELECT id, opt, real, pess, status 
+		SELECT id, opt, real, pess, status, created_at 
 		FROM tasks 
 		WHERE project_id = $1`, projectID)
 	if err != nil {
@@ -27,8 +26,7 @@ func (s *Storage) GetProjectTasks(projectID int) ([]models.Task, error) {
 	var tasks []models.Task
 	for rows.Next() {
 		var t models.Task
-		// ПРИКАЗ: Добавили &t.Status в Scan
-		if err := rows.Scan(&t.ID, &t.Opt, &t.Real, &t.Pess, &t.Status); err != nil {
+		if err := rows.Scan(&t.ID, &t.Opt, &t.Real, &t.Pess, &t.Status, &t.CreatedAt); err != nil {
 			return nil, err
 		}
 		tasks = append(tasks, t)
@@ -57,8 +55,8 @@ func (s *Storage) GetTaskDependencies(projectID int) ([]models.GraphEdge, error)
 	return edges, nil
 }
 
-func (s *Storage) UpdateTaskMetrics(id int, duration, priority float64) error {
-	_, err := s.db.Exec("UPDATE tasks SET duration_hours = $1, priority_score = $2 WHERE id = $3", duration, priority, id)
+func (s *Storage) UpdateTaskMetrics(id int, duration, priority float64, deadlineUnix int64) error {
+	_, err := s.db.Exec("UPDATE tasks SET duration_hours = $1, priority_score = $2, deadline_at = $3 WHERE id = $4", duration, priority, deadlineUnix, id)
 	return err
 }
 

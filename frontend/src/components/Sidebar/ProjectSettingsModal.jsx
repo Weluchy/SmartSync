@@ -41,6 +41,16 @@ export default function ProjectSettingsModal({ isOpen, onClose, project, onProje
 
   const handleInvite = async (e) => {
     e.preventDefault();
+    
+    // ДОБАВЛЕНО: Проверка, есть ли уже пользователь в проекте (включая создателя)
+    const isAlreadyMember = members.some(m => m.username.toLowerCase() === inviteUser.trim().toLowerCase());
+    if (isAlreadyMember) {
+      toast.error('Этот пользователь уже есть в проекте', {
+        style: { background: '#1a1a2e', color: '#f87171', border: '1px solid #f87171' }
+      });
+      return;
+    }
+
     try {
       await api.post(`/projects/${project.id}/members`, { 
         username: inviteUser, 

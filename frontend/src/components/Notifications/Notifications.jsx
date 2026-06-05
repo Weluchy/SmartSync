@@ -2,11 +2,12 @@ import { useState, useEffect } from 'react';
 import PropTypes from 'prop-types';
 import { Bell, BellRing, X } from 'lucide-react';
 
-export default function Notifications({ tasks }) {
+export default function Notifications({ tasks, invitations = [], onSelectProject }) {
   const [notifications, setNotifications] = useState([]);
   const [isOpen, setIsOpen] = useState(false);
   const userId = Number(localStorage.getItem('userId'));
 
+  // Уведомления из задач
   useEffect(() => {
     if (!tasks || !userId) return;
 
@@ -27,7 +28,7 @@ export default function Notifications({ tasks }) {
         }
       }
 
-      // 2. Дедлайн скоро (меньше 4 часов до deadline_at)
+      // 2. Дедлайн скоро (меньше 4 часов)
       if (task.deadline_at > 0 && Number(task.assignee_id) === userId) {
         const timeLeft = task.deadline_at - now;
         if (timeLeft > 0 && timeLeft < 4 * 3600000 && task.status !== 'done') {
@@ -44,7 +45,7 @@ export default function Notifications({ tasks }) {
         }
       }
 
-      // 3. Статус изменился (кто-то передвинул)
+      // 3. Статус изменился
       const storedStatus = localStorage.getItem(`notif_status_${task.id}`);
       if (storedStatus && storedStatus !== task.status && Number(task.assignee_id) === userId) {
         newNotifs.push({
@@ -57,7 +58,21 @@ export default function Notifications({ tasks }) {
       localStorage.setItem(`notif_status_${task.id}`, task.status);
     });
 
-    // Сохраняем новые уведомления
+    // 4. Приглашения
+    if (invitations && invitations.length > 0) {
+      invitations.forEach(inv => {
+        const stored = localStorage.getItem(`notif_invite_${inv.id}`);
+        if (!stored) {
+          newNotifs.push({
+            id: `invite_${inv.id}`,
+            type: 'invite',
+            text: `Вас пригласили в проект «${inv.name || inv.project_name || 'Новый проект'}»`,
+            projectId: inv.id,
+          });
+        }
+      });
+    }
+
     if (newNotifs.length > 0) {
       setNotifications(prev => {
         const merged = [...newNotifs, ...prev].slice(0, 50);
@@ -65,7 +80,7 @@ export default function Notifications({ tasks }) {
         return merged;
       });
     }
-  }, [tasks, userId]);
+  }, [tasks, userId, invitations]);
 
   // При монтировании загружаем сохранённые
   useEffect(() => {
@@ -78,6 +93,18 @@ export default function Notifications({ tasks }) {
     setNotifications(updated);
     localStorage.setItem('notifications', JSON.stringify(updated));
     localStorage.setItem(`notif_${id}`, 'seen');
+  };
+
+  const handleNotificationClick = (n) => {
+    if (n.type === 'invite' && onSelectProject) {
+      onSelectProject(n.projectId);
+    }
+    dismissNotification(n.id);
+  };
+
+  const clearAll = () => {
+    setNotifications([]);
+    localStorage.setItem('notifications', '[]');
   };
 
   const unreadCount = notifications.length;
@@ -97,20 +124,21 @@ export default function Notifications({ tasks }) {
         <div className="absolute right-0 top-10 w-80 bg-white rounded-xl shadow-2xl border z-50 max-h-96 overflow-y-auto">
           <div className="p-3 border-b flex justify-between items-center">
             <span className="text-xs font-bold text-gray-700 uppercase">Уведомления</span>
-            <button onClick={() => { setNotifications([]); localStorage.setItem('notifications', '[]'); }} className="text-[10px] text-blue-600 hover:underline">Все прочитаны</button>
+            <button onClick={clearAll} className="text-[10px] text-blue-600 hover:underline">Все прочитаны</button>
           </div>
           {notifications.length === 0 ? (
             <p className="text-xs text-gray-400 italic text-center py-6">Нет новых уведомлений</p>
           ) : (
             notifications.map(n => (
-              <div key={n.id} className="p-3 border-b last:border-0 hover:bg-gray-50 flex justify-between items-start gap-2">
+              <div key={n.id} className={`p-3 border-b last:border-0 flex justify-between items-start gap-2 ${n.type === 'invite' ? 'bg-blue-50 cursor-pointer hover:bg-blue-100' : 'hover:bg-gray-50'}`}
+                onClick={() => n.type === 'invite' && handleNotificationClick(n)}>
                 <div className="flex-1 min-w-0">
                   <p className="text-xs text-gray-700">{n.text}</p>
                   <p className="text-[9px] text-gray-400 mt-0.5">
-                    {n.type === 'assigned' ? '📌 Назначение' : n.type === 'deadline' ? '⏰ Дедлайн' : '🔄 Изменение'}
+                    {n.type === 'assigned' ? '📌 Назначение' : n.type === 'deadline' ? '⏰ Дедлайн' : n.type === 'invite' ? '📨 Приглашение' : '🔄 Изменение'}
                   </p>
                 </div>
-                <button onClick={() => dismissNotification(n.id)} className="shrink-0 text-gray-400 hover:text-gray-600"><X size={14} /></button>
+                <button onClick={(e) => { e.stopPropagation(); dismissNotification(n.id); }} className="shrink-0 text-gray-400 hover:text-gray-600"><X size={14} /></button>
               </div>
             ))
           )}
@@ -122,4 +150,6 @@ export default function Notifications({ tasks }) {
 
 Notifications.propTypes = {
   tasks: PropTypes.array,
+  invitations: PropTypes.array,
+  onSelectProject: PropTypes.func,
 };

@@ -3,7 +3,7 @@ import { User, LogOut, LayoutGrid, Network, BarChart3 } from 'lucide-react';
 
 import Notifications from '../Notifications/Notifications';
 
-export default function MainLayout({ children, activeView, onSwitchView, onLogout, projectName, tasks }) {
+export default function MainLayout({ children, activeView, onSwitchView, onLogout, projectName, tasks, invitations = [], onSelectProject }) {
   return (
     <div className="flex-1 flex flex-col min-w-0 overflow-hidden" style={{ backgroundColor: 'var(--bg-page)', color: 'var(--text-primary)' }}>
       <header className="h-16 px-6 flex items-center justify-between shadow-sm z-20" style={{ backgroundColor: 'var(--bg-card)', borderBottom: '1px solid var(--border)' }}>
@@ -31,7 +31,7 @@ export default function MainLayout({ children, activeView, onSwitchView, onLogou
             ))}
           </div>
 
-          <Notifications tasks={tasks || []} />
+          <Notifications tasks={tasks || []} invitations={invitations} onSelectProject={onSelectProject} />
 
           <div className="flex items-center gap-2 border-l pl-6" style={{ borderColor: 'var(--border)' }}>
             <button onClick={() => onSwitchView('profile')}
@@ -60,5 +60,7 @@ MainLayout.propTypes = {
   onSwitchView: PropTypes.func.isRequired,
   onLogout: PropTypes.func.isRequired,
   projectName: PropTypes.string,
-  tasks: PropTypes.array
+  tasks: PropTypes.array,
+  invitations: PropTypes.array,
+  onSelectProject: PropTypes.func,
 };

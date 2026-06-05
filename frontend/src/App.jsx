@@ -133,7 +133,6 @@ const loadInvitations = useCallback(async () => {
     await api.post('/projects', { name });
     loadProjects();
   }}
-  invitations={invitations}
   onProjectUpdated={loadProjects}
 />
         <Suspense fallback={<PageLoader />}>
@@ -146,6 +145,8 @@ const loadInvitations = useCallback(async () => {
   }}
   onLogout={logout}
   tasks={[]}
+  invitations={invitations}
+  onSelectProject={setCurrentProjectId}
 >
    {viewUserId ? (
     <UserProfilePage projectId={currentProjectId} userId={viewUserId} onBack={() => setViewUserId(null)} />

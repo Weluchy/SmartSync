@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
-import { Plus, Users, Send, Settings2, Moon, Sun, Activity, X } from 'lucide-react'; 
+import { Plus, Users, Send, Settings2, Moon, Sun, Activity, X } from 'lucide-react';
 import { api } from '../../api/client';
 import { useTheme } from '../../ThemeContext';
 import { toast } from 'react-hot-toast';
@@ -12,7 +12,7 @@ const MICROSERVICES = [
   { id: 'math', label: 'Math Engine' },
 ];
 
-export default function Sidebar({ projects, currentProjectId, onSelectProject, onCreateProject, invitations = [], onProjectUpdated }) {
+export default function Sidebar({ projects, currentProjectId, onSelectProject, onCreateProject, onProjectUpdated }) {
   const { isDark, toggleTheme } = useTheme();
   const [inviteUser, setInviteUser] = useState('');
   const [members, setMembers] = useState([]);
@@ -20,12 +20,11 @@ export default function Sidebar({ projects, currentProjectId, onSelectProject, o
   const [servicesStatus, setServicesStatus] = useState({});
   const [editingProject, setEditingProject] = useState(null);
 
-  // Пинг микросервисов — проверяем доступность через существующие эндпоинты
+  // Пинг микросервисов
   const pingServices = useCallback(async () => {
     const results = {};
     for (const svc of MICROSERVICES) {
       try {
-        // Используем api клиент с AbortController для таймаута
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 5000);
         const GATEWAY = import.meta.env.VITE_GATEWAY_URL || "/api";
@@ -37,22 +36,16 @@ export default function Sidebar({ projects, currentProjectId, onSelectProject, o
         
         let res;
         if (svc.id === 'task') {
-          // Шлём быстрый запрос на существующий эндпоинт task-service
           res = await fetch(`${GATEWAY}/search?q=health_check_ping`, { 
-            headers, 
-            signal: controller.signal 
+            headers, signal: controller.signal 
           });
         } else if (svc.id === 'auth') {
-          // Auth — используем health эндпоинт
           res = await fetch(`${GATEWAY}/user/profile`, { 
-            headers,
-            signal: controller.signal 
+            headers, signal: controller.signal 
           });
         } else if (svc.id === 'math') {
-          // Math engine — нет отдельного эндпоинта. Проверяем через график (он триггерит пересчёт мат. движка)
           res = await fetch(`${GATEWAY}/projects/0/graph`, { 
-            headers,
-            signal: controller.signal 
+            headers, signal: controller.signal 
           });
         }
         clearTimeout(timeout);
@@ -131,9 +124,9 @@ const changeRole = async (userId, newRole) => {
 
   return (
     <aside className="w-72 flex flex-col shadow-sm relative" style={{ backgroundColor: 'var(--bg-sidebar)', borderRight: '1px solid var(--border)' }}>
-      <div className="p-6 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
-        <h2 className="text-xl font-black text-blue-600 tracking-tight italic">SmartSync.engine</h2>
-        <button onClick={toggleTheme} className="p-2 rounded-lg transition-colors" style={{ color: 'var(--text-secondary)' }} title={isDark ? 'Светлая тема' : 'Тёмная тема'}>
+      <div className="p-5 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
+        <h2 className="text-lg font-black text-blue-600 tracking-tight italic">SmartSync.engine</h2>
+        <button onClick={toggleTheme} className="p-1.5 rounded-lg transition-colors hover:bg-gray-100" style={{ color: 'var(--text-secondary)' }}>
           {isDark ? <Sun size={16} /> : <Moon size={16} />}
         </button>
       </div>
@@ -152,43 +145,30 @@ const changeRole = async (userId, newRole) => {
           </button>
         </div>
         
-        {projects.map(p => (
-          <div 
-            key={p.id}
-            onClick={() => onSelectProject(p.id)}
-            style={{ color: currentProjectId === p.id ? '' : 'var(--text-secondary)' }}
-            className={`group flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition-all ${
-              currentProjectId === p.id ? 'bg-blue-50 text-blue-700 shadow-sm font-bold' : 'hover:opacity-80'
-            }`}
-          >
-            <span className="truncate text-sm font-medium">{p.name}</span>
-<Settings2 size={14} 
-  className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-500" 
-  onClick={(e) => { e.stopPropagation(); setEditingProject(p);  }} 
-/>
-          </div>
-        ))}
-      </div>
-
-      {/* Входящие приглашения */}
-      {invitations.length > 0 && (
-        <div className="p-4 border-t" style={{ borderColor: 'var(--border)', backgroundColor: 'rgba(59,130,246,0.05)' }}>
-          <span className="text-[10px] font-bold uppercase tracking-widest block mb-3 px-2" style={{ color: 'var(--text-muted)' }}>Приглашения</span>
-          <div className="space-y-2">
-            {invitations.map(inv => (
-              <div key={inv.id} className="bg-white p-3 rounded-xl border border-blue-100 shadow-sm">
-                <p className="text-[11px] text-blue-800 font-medium mb-2">Проект: {inv.project_name}</p>
-                <button 
-                  onClick={() => onSelectProject(inv.id)}
-                  className="w-full bg-blue-600 text-white text-[10px] font-bold py-1.5 rounded-lg hover:bg-blue-700"
-                >
-                  ОТКРЫТЬ ПРОЕКТ
-                </button>
+        {projects.map(p => {
+          const isOwner = p.role === 'owner' || !p.role;
+          return (
+            <div 
+              key={p.id}
+              onClick={() => onSelectProject(p.id)}
+              style={{ color: currentProjectId === p.id ? '' : 'var(--text-secondary)' }}
+              className={`group flex items-center justify-between p-2.5 rounded-lg cursor-pointer transition-all ${
+                currentProjectId === p.id ? 'bg-blue-50 text-blue-700 shadow-sm font-bold' : 'hover:opacity-80'
+              }`}
+            >
+              <div className="flex items-center gap-2 truncate">
+                {!isOwner && <Users size={12} className="text-indigo-400 shrink-0" title="Вы приглашены" />}
+                <span className="truncate text-sm font-medium">{p.name}</span>
               </div>
-            ))}
-          </div>
-        </div>
-      )}
+              
+              <Settings2 size={14} 
+                className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-blue-500 shrink-0" 
+                onClick={(e) => { e.stopPropagation(); setEditingProject(p); }} 
+              />
+            </div>
+          );
+        })}
+      </div>
 
       {/* Участники и приглашение */}
       {currentProjectId && (
@@ -205,9 +185,7 @@ const changeRole = async (userId, newRole) => {
       <span className="text-gray-800 font-semibold">{member.username}</span>
       
       {member.role === 'owner' ? (
-        <span className="text-[9px] uppercase font-bold text-blue-500">
-          {member.role}
-        </span>
+        <span className="text-[9px] uppercase font-bold text-blue-500">{member.role}</span>
       ) : (
         <select 
           value={member.role}
@@ -274,7 +252,6 @@ const changeRole = async (userId, newRole) => {
         ))}
       </div>
 
-      {/* Взрослая модалка настроек */}
       <ProjectSettingsModal 
         isOpen={!!editingProject} 
         onClose={() => setEditingProject(null)} 
