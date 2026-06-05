@@ -207,12 +207,13 @@ func (r *TaskRepository) GetGraphData(projectID, userID int) (*models.GraphData,
 	}
 	graph := &models.GraphData{}
 
+	// ДОБАВЛЕНО: milestone_id и deadline_at в конце SELECT
 	query := `
 		SELECT 
 			id, title, description, opt, real, pess, user_id, assignee_id,
 			COALESCE(duration_hours, 0.0), 
 			COALESCE(priority_score, 0.0), 
-			status 
+			status, milestone_id, deadline_at
 		FROM tasks 
 		WHERE project_id = $1
 	`
@@ -224,7 +225,8 @@ func (r *TaskRepository) GetGraphData(projectID, userID int) (*models.GraphData,
 
 	for rowsNodes.Next() {
 		var t models.Task
-		rowsNodes.Scan(&t.ID, &t.Title, &t.Description, &t.Opt, &t.Real, &t.Pess, &t.UserID, &t.AssigneeID, &t.DurationHours, &t.PriorityScore, &t.Status)
+		// ДОБАВЛЕНО: &t.MilestoneID, &t.DeadlineAt в конце Scan
+		rowsNodes.Scan(&t.ID, &t.Title, &t.Description, &t.Opt, &t.Real, &t.Pess, &t.UserID, &t.AssigneeID, &t.DurationHours, &t.PriorityScore, &t.Status, &t.MilestoneID, &t.DeadlineAt)
 		graph.Nodes = append(graph.Nodes, t)
 	}
 

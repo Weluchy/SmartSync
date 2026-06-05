@@ -4,34 +4,34 @@ import { X, Users, Edit3, AlertTriangle, Send } from 'lucide-react';
 import { api } from '../../api/client';
 import { toast } from 'react-hot-toast';
 
-export default function ProjectSettingsModal({ isOpen, onClose, projectId, onProjectUpdated }) {
+export default function ProjectSettingsModal({ isOpen, onClose, project, onProjectUpdated }) {
   const [activeTab, setActiveTab] = useState('rename');
   const [newName, setNewName] = useState('');
   const [members, setMembers] = useState([]);
   const [inviteUser, setInviteUser] = useState('');
   const [selectedRole, setSelectedRole] = useState('viewer');
+  const [deleteConfirm, setDeleteConfirm] = useState('');
 
   useEffect(() => {
-    if (isOpen && projectId) {
-      // Загружаем текущее имя проекта и участников
-      api.get(`/projects/${projectId}/members`).then(data => setMembers(data || [])).catch(() => {});
-      api.get('/projects').then(data => {
-        const proj = (data || []).find(p => p.id === projectId);
-        if (proj) setNewName(proj.name || '');
-      }).catch(() => {});
+    // ИСПРАВЛЕНИЕ: Теперь мы берем данные напрямую из объекта project
+    if (isOpen && project) {
+      setNewName(project.name || '');
+      setDeleteConfirm('');
+      api.get(`/projects/${project.id}/members`).then(data => setMembers(data || [])).catch(() => {});
     }
-  }, [isOpen, projectId]);
+  }, [isOpen, project]);
 
-  if (!isOpen) return null;
+  if (!isOpen || !project) return null;
 
   const handleRename = async () => {
     if (!newName.trim()) return;
     try {
-      await api.put(`/projects/${projectId}`, { name: newName.trim() });
+      await api.put(`/projects/${project.id}`, { name: newName.trim() });
       toast.success('Проект переименован', {
         style: { background: '#1a1a2e', color: '#7ac9a7', border: '1px solid #7ac9a7' }
       });
       onProjectUpdated?.();
+      window.location.reload(); // Чтобы обновилось в боковой панели
     } catch (err) {
       toast.error(err.message, {
         style: { background: '#1a1a2e', color: '#f87171', border: '1px solid #f87171' }
@@ -42,7 +42,7 @@ export default function ProjectSettingsModal({ isOpen, onClose, projectId, onPro
   const handleInvite = async (e) => {
     e.preventDefault();
     try {
-      await api.post(`/projects/${projectId}/members`, { 
+      await api.post(`/projects/${project.id}/members`, { 
         username: inviteUser, 
         role: selectedRole
       });
@@ -50,7 +50,7 @@ export default function ProjectSettingsModal({ isOpen, onClose, projectId, onPro
       toast.success(`Приглашение отправлено ${inviteUser}`, {
         style: { background: '#1a1a2e', color: '#7ac9a7', border: '1px solid #7ac9a7' }
       });
-      const data = await api.get(`/projects/${projectId}/members`);
+      const data = await api.get(`/projects/${project.id}/members`);
       setMembers(data || []);
     } catch (err) { 
       toast.error(err.message, {
@@ -61,12 +61,12 @@ export default function ProjectSettingsModal({ isOpen, onClose, projectId, onPro
 
   const removeMember = async (userId) => {
     try {
-      await api.delete(`/projects/${projectId}/members/${userId}`);
+      await api.delete(`/projects/${project.id}/members/${userId}`);
       toast('Участник удалён', {
         icon: '👤',
         style: { background: '#1a1a2e', color: '#e4e4e7', border: '1px solid #f87171' }
       });
-      const data = await api.get(`/projects/${projectId}/members`);
+      const data = await api.get(`/projects/${project.id}/members`);
       setMembers(data || []);
     } catch (err) { 
       toast.error(err.message, {
@@ -77,8 +77,8 @@ export default function ProjectSettingsModal({ isOpen, onClose, projectId, onPro
 
   const changeRole = async (userId, newRole) => {
     try {
-      await api.patch(`/projects/${projectId}/members/${userId}`, { role: newRole });
-      const data = await api.get(`/projects/${projectId}/members`);
+      await api.patch(`/projects/${project.id}/members/${userId}`, { role: newRole });
+      const data = await api.get(`/projects/${project.id}/members`);
       setMembers(data || []);
     } catch (err) { 
       toast.error(err.message, {
@@ -88,15 +88,16 @@ export default function ProjectSettingsModal({ isOpen, onClose, projectId, onPro
   };
 
   const handleDeleteProject = async () => {
-    if (!confirm('Вы уверены, что хотите удалить проект? Это действие необратимо!')) return;
+    if (deleteConfirm !== project.name) return; // Защита от случайного удаления
     try {
-      await api.delete(`/projects/${projectId}`);
+      await api.delete(`/projects/${project.id}`);
       toast('Проект удалён', {
         icon: '🗑️',
         style: { background: '#1a1a2e', color: '#e4e4e7', border: '1px solid #f87171' }
       });
       onClose();
       onProjectUpdated?.();
+      window.location.reload();
     } catch (err) {
       toast.error(err.message, {
         style: { background: '#1a1a2e', color: '#f87171', border: '1px solid #f87171' }
@@ -212,12 +213,22 @@ export default function ProjectSettingsModal({ isOpen, onClose, projectId, onPro
                 <h4 className="text-sm font-bold text-red-700 flex items-center gap-2">
                   <AlertTriangle size={16} /> Удаление проекта
                 </h4>
-                <p className="text-xs text-red-600 mt-2">
+                <p className="text-xs text-red-600 mt-2 mb-4">
                   Это действие удалит все задачи, комментарии и данные проекта без возможности восстановления.
                 </p>
+                <label className="block text-[10px] font-bold text-red-700 uppercase mb-1">
+                  Введите <b>{project.name}</b> для подтверждения:
+                </label>
+                <input
+                  value={deleteConfirm}
+                  onChange={e => setDeleteConfirm(e.target.value)}
+                  placeholder={project.name}
+                  className="w-full border border-red-300 rounded-lg p-2 outline-none focus:ring-2 focus:ring-red-500 text-sm bg-white mb-4"
+                />
                 <button 
                   onClick={handleDeleteProject}
-                  className="mt-4 w-full bg-red-600 text-white font-bold py-2.5 rounded-xl hover:bg-red-700 transition-colors"
+                  disabled={deleteConfirm !== project.name}
+                  className={`w-full font-bold py-2.5 rounded-xl transition-colors ${deleteConfirm === project.name ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-red-200 text-red-400 cursor-not-allowed'}`}
                 >
                   Удалить проект навсегда
                 </button>
@@ -233,6 +244,6 @@ export default function ProjectSettingsModal({ isOpen, onClose, projectId, onPro
 ProjectSettingsModal.propTypes = {
   isOpen: PropTypes.bool.isRequired,
   onClose: PropTypes.func.isRequired,
-  projectId: PropTypes.oneOfType([PropTypes.number, PropTypes.string]),
+  project: PropTypes.object,
   onProjectUpdated: PropTypes.func
 };
