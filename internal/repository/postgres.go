@@ -218,18 +218,22 @@ func (r *TaskRepository) GetTasksByProject(projectID, userID int) ([]models.Task
 		return nil, err
 	}
 	var tasks []models.Task
+
+	// ФИКС: Добавили t.created_at в конец SELECT
 	query := `SELECT t.id, t.project_id, t.user_id, t.assignee_id, t.title, t.description, t.status, t.opt, t.real, t.pess, 
-		COALESCE(t.duration_hours, 0.0), COALESCE(t.priority_score, 0.0), t.milestone_id, t.deadline_at,
-		COALESCE(t.duration_hours, 0.0), COALESCE(t.priority_score, 0.0)
+		COALESCE(t.duration_hours, 0.0), COALESCE(t.priority_score, 0.0), t.milestone_id, t.deadline_at, t.created_at 
 		FROM tasks t WHERE t.project_id = $1`
+
 	rows, err := r.db.Query(query, projectID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
+
 	for rows.Next() {
 		var t models.Task
-		rows.Scan(&t.ID, &t.ProjectID, &t.UserID, &t.AssigneeID, &t.Title, &t.Description, &t.Status, &t.Opt, &t.Real, &t.Pess, &t.DurationHours, &t.PriorityScore, &t.MilestoneID, &t.DeadlineAt, &t.DurationHours, &t.PriorityScore)
+		// ФИКС: Добавили &t.CreatedAt в самый конец списка Scan
+		rows.Scan(&t.ID, &t.ProjectID, &t.UserID, &t.AssigneeID, &t.Title, &t.Description, &t.Status, &t.Opt, &t.Real, &t.Pess, &t.DurationHours, &t.PriorityScore, &t.MilestoneID, &t.DeadlineAt, &t.CreatedAt)
 		tasks = append(tasks, t)
 	}
 	return tasks, nil

@@ -339,9 +339,13 @@ const saveEditTitle = async () => {
                     const isCritical = task.priority_score >= (maxScore * 0.8) && task.priority_score > 0 && task.status !== 'done';
                     const createdDate = new Date(task.created_at);
                     const isDateValid = createdDate.getFullYear() > 2000;
+                    
+                    // СЧИТАЕМ ВРЕМЯ НА ЛЕТУ: если бэкенд отдал 0, применяем формулу PERT
+                    const duration = task.duration_hours || ((task.opt + 4 * task.real + task.pess) / 6);
+                    
                     let deadlineStr = '', exactDate = '';
-                    if (isDateValid && task.duration_hours > 0) {
-                      const deadline = new Date(createdDate.getTime() + (task.duration_hours * 3600000));
+                    if (isDateValid && duration > 0) {
+                      const deadline = new Date(createdDate.getTime() + (duration * 3600000));
                       exactDate = deadline.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
                       if (task.status === 'done') {
                         deadlineStr = 'Выполнено';
@@ -387,7 +391,7 @@ const saveEditTitle = async () => {
 
                         {task.description && <p className="text-[11px] mt-1.5 line-clamp-2" style={{ color: 'var(--text-muted)' }}>{task.description.length > 60 ? `${task.description.substring(0, 60)}...` : task.description}</p>}
                         
-                        {isDateValid && task.duration_hours > 0 ? (
+                        {isDateValid && duration > 0 ? (
                           <div className={`mt-3 rounded-xl p-3 border ${
                             task.status === 'done' ? 'bg-green-50 border-green-200' : 
                             deadlineStr === 'Просрочено!' ? 'bg-red-50 border-red-200' : 
@@ -413,12 +417,14 @@ const saveEditTitle = async () => {
                                 deadlineStr === 'Просрочено!' ? 'text-red-500' : 
                                 'text-amber-500'
                               }`}>
-                                {task.duration_hours.toFixed(1)} ч
+                                {duration.toFixed(1)} ч
                               </span>
                             </div>
-                            <div className="text-[10px] mt-1 font-medium" style={{ color: 'var(--text-muted)' }}>
-                              Дедлайн: {exactDate}
-                            </div>
+                            {task.status !== 'done' && (
+                              <div className="text-[10px] mt-1 font-medium" style={{ color: 'var(--text-muted)' }}>
+                                Дедлайн: {exactDate}
+                              </div>
+                            )}
                           </div>
                         ) : (
                           <div className="mt-2 text-[10px]" style={{ color: 'var(--text-muted)' }}>
@@ -432,7 +438,7 @@ const saveEditTitle = async () => {
                         </div>
 
                         <div className="flex items-center justify-between mt-3 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-                          <span className="text-[10px] font-bold" style={{ color: 'var(--text-secondary)' }}>{task.duration_hours ? `${task.duration_hours.toFixed(1)} ч.` : '0 ч.'}</span>
+                          <span className="text-[10px] font-bold" style={{ color: 'var(--text-secondary)' }}>{duration.toFixed(1)} ч.</span>
                           <div className="flex items-center gap-1.5">
                             <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center text-[8px] text-white font-bold cursor-pointer hover:opacity-80 transition-opacity" 
                               onClick={e => { e.stopPropagation(); onViewUser?.(task.user_id); }} title="Профиль автора">
