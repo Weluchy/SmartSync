@@ -13,7 +13,12 @@ SmartSync is an event-driven task management platform (Kanban) built with Go. It
 
 https://github.com/user-attachments/assets/519bdebc-20a5-4a28-84b7-58396e70c9ec
 
+<details>
+<summary><b>🖼️ View Kanban Board Preview</b></summary>
+
 ![Kanban Board](docs/kanban.png)
+
+</details>
 
 ## 🛠 Tech Stack
 
@@ -26,17 +31,21 @@ https://github.com/user-attachments/assets/519bdebc-20a5-4a28-84b7-58396e70c9ec
 
 ## ✨ Architecture & Key Features
 
+<details>
+<summary><b>🔍 View System Architecture & Schemas</b></summary>
+
+**System Architecture**
 ![System Architecture](docs/architecture.png)
 
-### Polyglot Persistence
+**Polyglot Persistence**
 Data storage is separated based on domain needs. PostgreSQL guarantees ACID transactions and structural integrity for tasks and users, while MongoDB handles high-speed, schema-less BSON writes for immutable audit logs.
-
 ![Storage Architecture](docs/storage.png)
 
-### Event-Driven Communication
+**Event-Driven Communication**
 Microservices are loosely coupled. The `Task Service` publishes events to the `NATS` message broker, which are asynchronously consumed by the `Engine Service` and `Audit Service`. This prevents cascading failures and network bottlenecks.
-
 ![NATS Flow](docs/nats.png)
+
+</details>
 
 ### Real-Time WebSockets
 Clients maintain a persistent connection with the API Gateway. System events (e.g., graph recalculations, status changes) are pushed directly to the UI without long-polling.
@@ -46,12 +55,15 @@ Clients maintain a persistent connection with the API Gateway. System events (e.
 ### Mathematical Task Evaluation (PERT & CPM)
 The background Priority Service calculates the expected time of a task using the PERT formula. Using the Critical Path Method (CPM), it calculates the Total Float to identify bottlenecks. 
 
+<details>
+<summary><b>📐 View Formulas & PERT Graph</b></summary>
+
 ![PERT Formula](docs/pert.png)
 ![CPM Formula](docs/CPM.png)
 
-Tasks on the critical path are automatically highlighted in red on the interactive graph.
-
 ![PERT Graph](docs/pertGraph.png)
+
+</details>
 
 ### Graph Healing Algorithm
 When a task is deleted from the middle of a Directed Acyclic Graph (DAG), the algorithm prevents broken links by performing edge contraction. It maps all parent nodes to all child nodes, keeping the project flow intact.
@@ -68,7 +80,7 @@ When a task is deleted from the middle of a Directed Acyclic Graph (DAG), the al
 ## 📊 Observability & UI Showcase
 
 <details>
-<summary><b>Click to expand UI & Monitoring Screenshots</b></summary>
+<summary><b>📈 Click to expand UI & Monitoring Screenshots</b></summary>
 
 **Prometheus & Grafana Monitoring**
 ![Grafana Dashboards](docs/grafana.png)
