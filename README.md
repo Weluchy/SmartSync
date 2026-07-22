@@ -1,4 +1,4 @@
-# SmartSync — Event-Driven Task Management Platform 🚀
+# SmartSync - Event-Driven Task Management Platform
 
 ![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=flat&logo=postgresql&logoColor=white)
@@ -13,7 +13,7 @@ SmartSync is an event-driven task management platform (Kanban) built with Go. It
 
 https://github.com/user-attachments/assets/519bdebc-20a5-4a28-84b7-58396e70c9ec
 
-*(See the `docs/` folder for more interface and monitoring screenshots)*
+![Kanban Board](docs/kanban.png)
 
 ## 🛠 Tech Stack
 
@@ -24,15 +24,37 @@ https://github.com/user-attachments/assets/519bdebc-20a5-4a28-84b7-58396e70c9ec
 * **Infrastructure & DevOps:** Docker, Docker Compose
 * **Observability:** Prometheus, Grafana
 
-## ✨ Key Features & Architecture
+## ✨ Architecture & Key Features
 
-* **API Gateway Pattern:** Single entry point featuring IP-based Rate Limiting and a Circuit Breaker (`gobreaker`) to prevent cascading service failures.
-* **Event-Driven Communication:** Microservices are loosely coupled and communicate asynchronously via NATS.
-* **Math Engine:** A background Priority Service that runs a Depth-First Search (DFS) algorithm to recalculate task priorities, weights, and deadlines based on PERT estimations.
-* **Immutable Audit Trail:** An isolated audit service that listens to NATS events and stores all state changes in MongoDB.
-* **Real-time WebSockets:** UI updates (status changes, new connections) are pushed to clients instantly via WebSockets directly from the event broker.
+![System Architecture](docs/architecture.jpg)
 
-![System Architecture](docs/architecture.png)
+### Polyglot Persistence
+Data storage is separated based on domain needs. PostgreSQL guarantees ACID transactions and structural integrity for tasks and users, while MongoDB handles high-speed, schema-less BSON writes for immutable audit logs.
+
+![Storage Architecture](docs/storage.jpg)
+
+### Event-Driven Communication
+Microservices are loosely coupled. The `Task Service` publishes events to the `NATS` message broker, which are asynchronously consumed by the `Engine Service` and `Audit Service`. This prevents cascading failures and network bottlenecks.
+
+![NATS Flow](docs/nats.jpg)
+
+### Real-Time WebSockets
+Clients maintain a persistent connection with the API Gateway. System events (e.g., graph recalculations, status changes) are pushed directly to the UI without long-polling.
+
+## 🧠 Under the Hood: Graph Engine
+
+### Mathematical Task Evaluation (PERT & CPM)
+The background Priority Service calculates the expected time of a task using the PERT formula. Using the Critical Path Method (CPM), it calculates the Total Float to identify bottlenecks. 
+
+![PERT Formula](docs/pert.png)
+![CPM Formula](docs/CPM.png)
+
+Tasks on the critical path are automatically highlighted in red on the interactive graph.
+
+![PERT Graph](docs/pertGraph.png)
+
+### Graph Healing Algorithm
+When a task is deleted from the middle of a Directed Acyclic Graph (DAG), the algorithm prevents broken links by performing edge contraction. It maps all parent nodes to all child nodes, keeping the project flow intact.
 
 ## 🏗 Microservices Layout
 
@@ -43,13 +65,29 @@ https://github.com/user-attachments/assets/519bdebc-20a5-4a28-84b7-58396e70c9ec
 * **`priority-service`**: Background math engine for graph and critical path calculations.
 * **`deadline-service`**: Cron-like worker tracking deadlines and pushing alerts.
 
+## 📊 Observability & UI Showcase
+
+<details>
+<summary><b>Click to expand UI & Monitoring Screenshots</b></summary>
+
+**Prometheus & Grafana Monitoring**
+![Grafana Dashboards](docs/grafana.jpg)
+
+**Project Analytics & Dashboard**
+![Analytics Dashboard](docs/analytics.png)
+
+**Task Management & Estimation Panel**
+![Task Creation](docs/task-create.png)
+
+</details>
+
 ## 🚀 Quick Start
 
 The project is fully containerized. You can spin up the entire infrastructure with a single command.
 
 ### 1. Clone the repository
 ```bash
-git clone [https://github.com/YOUR_GITHUB_NAME/SmartSync.git](https://github.com/YOUR_GITHUB_NAME/SmartSync.git)
+git clone [https://github.com/Weluchy/SmartSync.git](https://github.com/Weluchy/SmartSync.git)
 cd SmartSync
 ```
 
@@ -64,8 +102,6 @@ Once all containers are up and running, the services will be available at:
 * **API Gateway:** `http://localhost:8000`
 * **Grafana:** `http://localhost:3000` *(Login: admin / Password: admin)*
 * **Prometheus:** `http://localhost:9090`
-
-![Kanban Board](docs/kanban.png)
 
 ## 🔌 API Reference (Examples)
 
@@ -130,5 +166,3 @@ Content-Type: application/json
 GET /logs/54
 Authorization: Bearer <token>
 ```
-
-![Grafana Monitoring](docs/grafana.png)
