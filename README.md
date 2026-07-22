@@ -10,7 +10,7 @@
 SmartSync is an event-driven task management platform (Kanban) built with Go. It serves as a proof-of-concept for a scalable microservices architecture. The system uses mathematical task evaluation (PERT / CPM) to automatically build dependency graphs and identify the critical path of a project in real-time.
 
 
-![Main_Page](docs/SmartSync.jpg)
+![Main_Page](docs/SmartSync1.jpg)
 
 
 ## 🎥 Demo & Previews
@@ -21,7 +21,7 @@ https://github.com/user-attachments/assets/519bdebc-20a5-4a28-84b7-58396e70c9ec
 <summary><b>👉 [ CLICK HERE ] 🖼️ View Kanban Board Preview</b></summary>
 
 ![Kanban Board](docs/kanban.png)
-
+![Main_Page_0](docs/SmartSync.jpg)
 </details>
 
 ## 🛠 Tech Stack
