@@ -14,7 +14,7 @@ SmartSync is an event-driven task management platform (Kanban) built with Go. It
 https://github.com/user-attachments/assets/519bdebc-20a5-4a28-84b7-58396e70c9ec
 
 <details>
-<summary><b>🖼️ View Kanban Board Preview</b></summary>
+<summary><b>👉 [ CLICK HERE ] 🖼️ View Kanban Board Preview</b></summary>
 
 ![Kanban Board](docs/kanban.png)
 
@@ -32,7 +32,7 @@ https://github.com/user-attachments/assets/519bdebc-20a5-4a28-84b7-58396e70c9ec
 ## ✨ Architecture & Key Features
 
 <details>
-<summary><b>🔍 View System Architecture & Schemas</b></summary>
+<summary><b>👉 [ CLICK HERE ] 🔍 View System Architecture & Schemas</b></summary>
 
 **System Architecture**
 ![System Architecture](docs/architecture.png)
@@ -56,7 +56,7 @@ Clients maintain a persistent connection with the API Gateway. System events (e.
 The background Priority Service calculates the expected time of a task using the PERT formula. Using the Critical Path Method (CPM), it calculates the Total Float to identify bottlenecks. 
 
 <details>
-<summary><b>📐 View Formulas & PERT Graph</b></summary>
+<summary><b>👉 [ CLICK HERE ] 📐 View Formulas & PERT Graph</b></summary>
 
 ![PERT Formula](docs/pert.png)
 ![CPM Formula](docs/CPM.png)
@@ -80,7 +80,7 @@ When a task is deleted from the middle of a Directed Acyclic Graph (DAG), the al
 ## 📊 Observability & UI Showcase
 
 <details>
-<summary><b>📈 Click to expand UI & Monitoring Screenshots</b></summary>
+<summary><b>👉 [ CLICK HERE ] 📈 Click to expand UI & Monitoring Screenshots</b></summary>
 
 **Prometheus & Grafana Monitoring**
 ![Grafana Dashboards](docs/grafana.png)
