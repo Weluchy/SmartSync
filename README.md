@@ -26,17 +26,17 @@ https://github.com/user-attachments/assets/519bdebc-20a5-4a28-84b7-58396e70c9ec
 
 ## ✨ Architecture & Key Features
 
-![System Architecture](docs/architecture.jpg)
+![System Architecture](docs/architecture.png)
 
 ### Polyglot Persistence
 Data storage is separated based on domain needs. PostgreSQL guarantees ACID transactions and structural integrity for tasks and users, while MongoDB handles high-speed, schema-less BSON writes for immutable audit logs.
 
-![Storage Architecture](docs/storage.jpg)
+![Storage Architecture](docs/storage.png)
 
 ### Event-Driven Communication
 Microservices are loosely coupled. The `Task Service` publishes events to the `NATS` message broker, which are asynchronously consumed by the `Engine Service` and `Audit Service`. This prevents cascading failures and network bottlenecks.
 
-![NATS Flow](docs/nats.jpg)
+![NATS Flow](docs/nats.png)
 
 ### Real-Time WebSockets
 Clients maintain a persistent connection with the API Gateway. System events (e.g., graph recalculations, status changes) are pushed directly to the UI without long-polling.
@@ -71,7 +71,7 @@ When a task is deleted from the middle of a Directed Acyclic Graph (DAG), the al
 <summary><b>Click to expand UI & Monitoring Screenshots</b></summary>
 
 **Prometheus & Grafana Monitoring**
-![Grafana Dashboards](docs/grafana.jpg)
+![Grafana Dashboards](docs/grafana.png)
 
 **Project Analytics & Dashboard**
 ![Analytics Dashboard](docs/analytics.png)
