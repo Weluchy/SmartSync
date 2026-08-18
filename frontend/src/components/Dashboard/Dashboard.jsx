@@ -45,7 +45,6 @@ export default function Dashboard({ projectId }) {
 
   const handleExport = async () => {
     try {
-      // Используем api client для получения blob
       const token = localStorage.getItem('token');
       const GATEWAY = import.meta.env.VITE_GATEWAY_URL || "/api";
       const response = await fetch(`${GATEWAY}/projects/${projectId}/export/csv`, {
@@ -122,7 +121,6 @@ export default function Dashboard({ projectId }) {
     <div className="h-full w-full bg-gray-50 p-6 overflow-y-auto">
       <div className="max-w-6xl mx-auto space-y-6">
         
-        {/* Шапка */}
         <div className="flex justify-between items-end">
           <div>
             <h2 className="text-2xl font-bold text-gray-800 tracking-tight">Аналитика проекта</h2>
@@ -138,7 +136,6 @@ export default function Dashboard({ projectId }) {
           </div>
         </div>
 
-        {/* KPI Карточки */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div className="bg-white p-5 rounded-2xl border shadow-sm flex items-center gap-4">
             <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center"><Layers size={24}/></div>
@@ -170,7 +167,6 @@ export default function Dashboard({ projectId }) {
           </div>
         </div>
 
-        {/* Графики */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           
           <div className="bg-white p-6 rounded-2xl border shadow-sm">
@@ -210,7 +206,6 @@ export default function Dashboard({ projectId }) {
           </div>
         </div>
 
-        {/* Прогресс-бар вех */}
         {milestones.length > 0 && (
           <div className="bg-white p-6 rounded-2xl border shadow-sm">
             <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
@@ -253,7 +248,6 @@ export default function Dashboard({ projectId }) {
           </div>
         )}
 
-        {/* Milestones / Спринты */}
         <div className="bg-white rounded-2xl border shadow-sm overflow-hidden">
           <div className="p-6 border-b flex items-center justify-between">
   <div className="flex items-center gap-3">

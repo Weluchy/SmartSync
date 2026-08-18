@@ -17,7 +17,6 @@ type Handler struct {
 	projectService *service.ProjectService
 }
 
-// Убрали NATS из параметров, так как хендлеру он больше не нужен[cite: 2]
 func NewHandler(ts *service.TaskService, ps *service.ProjectService) *Handler {
 	return &Handler{
 		service:        ts,
@@ -243,9 +242,7 @@ func (h *Handler) getProjectTasks(c *gin.Context) {
 	projectID, _ := strconv.Atoi(c.Param("project_id"))
 	tasks, err := h.service.GetTasksByProject(projectID, userID)
 	if err != nil {
-		// ДОБАВЛЯЕМ ВОТ ЭТУ СТРОКУ:
-		log.Printf("❌ ОШИБКА БД ПРИ ЗАГРУЗКЕ ЗАДАЧ: %v", err)
-
+		log.Printf("Ошибка загрузки задач: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to load tasks"})
 		return
 	}

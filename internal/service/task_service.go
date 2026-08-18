@@ -53,7 +53,7 @@ func (s *TaskService) triggerMathEngine(projectID int) {
 	s.nc.Publish("project.updated", []byte(fmt.Sprintf(`{"project_id": %d}`, projectID)))
 }
 
-// ТОЧЕЧНЫЙ ФИКС: Твоя логика вынесена сюда, чтобы Граф тоже её получал
+// enrichTasks подставляет имена авторов и исполнителей из auth-service
 func (s *TaskService) enrichTasks(tasks []models.Task) []models.Task {
 	if len(tasks) == 0 {
 		return tasks
@@ -70,9 +70,7 @@ func (s *TaskService) enrichTasks(tasks []models.Task) []models.Task {
 		ids = append(ids, id)
 	}
 
-	// ИСПРАВЛЕНИЕ 500 ОШИБКИ:
-	// Если массив ids пустой (например, задачи созданы удаленными юзерами),
-	// мы не делаем HTTP запрос вообще, а сразу отдаем заглушки.
+	// Если ids пустой, не делаем HTTP запрос, а сразу подставляем заглушки
 	if len(ids) == 0 {
 		for i := range tasks {
 			tasks[i].CreatedByName = "Неизвестный автор"
@@ -172,7 +170,6 @@ func (s *TaskService) UpdateTask(t *models.Task) error {
 			if oldTask.Title != t.Title {
 				changes = append(changes, fmt.Sprintf("название: «%s» → «%s»", oldTask.Title, t.Title))
 			}
-			// ТОЧЕЧНЫЙ ФИКС: логируем изменение описания
 			if oldTask.Description != t.Description {
 				changes = append(changes, "изменено описание задачи")
 			}
@@ -280,12 +277,10 @@ func (s *TaskService) GetGraph(ctx context.Context, projectID, userID int) (*mod
 		}
 	}
 
-	// Cache miss: читаем из БД и сохраняем в кэш с TTL
+	// Кэш пуст — читаем из БД и сохраняем с TTL 1 час
 	graph, err := s.repo.GetGraphData(projectID, userID)
 	if err == nil && graph != nil {
 		graph.Nodes = s.enrichTasks(graph.Nodes)
-		// Сохраняем кэш с TTL 1 час — priority-service больше его не затирает.
-		// При изменении графа triggerMathEngine удалит ключ, и кэш перестроится.
 		graphJSON, _ := json.Marshal(graph)
 		s.redis.Set(ctx, cacheKey, graphJSON, time.Hour)
 	}
@@ -342,13 +337,12 @@ func (s *TaskService) GetDependenciesByProject(projectID int) ([]models.Dependen
 	return s.repo.GetDependenciesByProject(projectID)
 }
 
-// GetTaskByID — исправлено: теперь ищет задачу по ID, проверяя доступ через project_members, а не по user_id
 func (s *TaskService) GetTaskByID(id, userID int) (*models.Task, error) {
 	task, err := s.repo.GetByIDInternal(id)
 	if err != nil {
 		return nil, err
 	}
-	// Проверяем доступ через project_members
+	// Проверяем, что пользователь состоит в проекте задачи
 	if _, err := s.repo.CheckAccess(task.ProjectID, userID, models.RoleWeights[models.RoleViewer]); err != nil {
 		return nil, err
 	}
@@ -373,10 +367,9 @@ func (s *TaskService) CreateMilestone(projectID, userID int, title string, deadl
 	if _, err := s.repo.CheckAccess(projectID, userID, models.RoleWeights[models.RoleEditor]); err != nil {
 		return nil, err
 	}
-	// Валидация формата даты
+	// Проверяем формат даты: ISO 8601 или YYYY-MM-DD
 	_, err := time.Parse(deadlineLayout, deadline)
 	if err != nil {
-		// Пробуем ещё ISO date без времени
 		_, err2 := time.Parse("2006-01-02", deadline)
 		if err2 != nil {
 			return nil, fmt.Errorf("неверный формат даты. Используйте YYYY-MM-DD или ISO 8601")

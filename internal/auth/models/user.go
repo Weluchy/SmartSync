@@ -6,9 +6,9 @@ type User struct {
 	ID           int       `json:"id"`
 	Username     string    `json:"username"`
 	PasswordHash string    `json:"-"`
-	FullName     string    `json:"full_name"` // Новое
-	Stack        string    `json:"stack"`     // Новое
-	Status       string    `json:"status"`    // Новое
+	FullName     string    `json:"full_name"`
+	Stack        string    `json:"stack"`
+	Status       string    `json:"status"`
 	CreatedAt    time.Time `json:"created_at"`
 }
 

@@ -27,7 +27,7 @@ func (c *Calculator) RecalculateGraph(projectID int) {
 	earlyStart := make(map[int]float64)
 	createdAt := make(map[int]time.Time)
 
-	// 1. Инициализация всех задач
+	// Инициализация всех задач
 	for _, t := range tasks {
 		inDegree[t.ID] = 0
 		if t.Status == "done" {
@@ -40,13 +40,13 @@ func (c *Calculator) RecalculateGraph(projectID int) {
 		createdAt[t.ID] = t.CreatedAt
 	}
 
-	// 2. Построение связей (e.From = родитель, e.To = ребенок)
+	// Построение связей (e.From = родитель, e.To = ребенок)
 	for _, e := range edges {
 		adj[e.From] = append(adj[e.From], e.To)
 		inDegree[e.To]++
 	}
 
-	// 3. Топологическая сортировка (алгоритм Кана)
+	// Топологическая сортировка (алгоритм Кана)
 	var queue []int
 	for _, t := range tasks {
 		if inDegree[t.ID] == 0 {
@@ -71,8 +71,8 @@ func (c *Calculator) RecalculateGraph(projectID int) {
 		}
 	}
 
-	// 4. Каскадный пересчёт дедлайнов (Forward Pass)
-	// Берём самое ранее время создания среди корневых задач
+	// Каскадный пересчёт дедлайнов (Forward Pass)
+	// Берём самое раннее время создания среди корневых задач
 	var baseTime time.Time
 	for _, t := range tasks {
 		if inDegree[t.ID] == 0 { // переиспользуем inDegree как флаг "корневая"
@@ -90,7 +90,7 @@ func (c *Calculator) RecalculateGraph(projectID int) {
 		}
 	}
 
-	// 5. Сохранение метрик + дедлайнов
+	// Сохранение метрик и дедлайнов
 	for _, t := range tasks {
 		// Конвертируем earlyFinish (часы) в timestamp (unix ms)
 		deadlineUnix := baseTime.UnixMilli() + int64(earlyFinish[t.ID]*3600000)

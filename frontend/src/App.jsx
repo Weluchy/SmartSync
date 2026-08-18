@@ -3,7 +3,7 @@ import { api } from './api/client';
 import Sidebar from './components/Sidebar/Sidebar';
 import { Toaster, toast } from 'react-hot-toast';
 
-// Lazy-loaded components — грузятся только когда нужны
+// Ленивая загрузка компонентов для уменьшения стартового бандла
 const MainLayout = lazy(() => import('./components/Layout/MainLayout'));
 const KanbanBoard = lazy(() => import('./components/Kanban/KanbanBoard'));
 const TaskGraph = lazy(() => import('./components/Graph/TaskGraph'));
@@ -11,7 +11,7 @@ const UserProfile = lazy(() => import('./components/Profile/UserProfile'));
 const Dashboard = lazy(() => import('./components/Dashboard/Dashboard'));
 const UserProfilePage = lazy(() => import('./components/Profile/UserProfilePage'));
 
-// Плейсхолдер загрузки
+// Заглушка на время загрузки
 const PageLoader = () => (
   <div className="flex-1 flex items-center justify-center bg-gray-50">
     <div className="text-gray-400 text-sm font-medium animate-pulse">Загрузка...</div>
@@ -92,7 +92,7 @@ const loadInvitations = useCallback(async () => {
 
   const logout = () => {
     localStorage.removeItem('token');
-    // Очищаем все сохранённые позиции графа при выходе
+    // Очищаем сохранённые позиции графа при выходе
     const keysToRemove = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i);
@@ -199,7 +199,6 @@ const loadInvitations = useCallback(async () => {
         {error && <div className="mb-4 p-3 bg-red-50 text-red-600 text-sm rounded-lg font-medium">{error}</div>}
 
 <div className="flex flex-col gap-4">
-  {/* Поле логина */}
   <input 
     type="text" 
     placeholder="Логин" 
@@ -209,7 +208,6 @@ const loadInvitations = useCallback(async () => {
     autoComplete="off"
     data-lpignore="true"
   />
-  {/* Поле пароля (замаскировано под обычный текст через CSS, чтобы ослепить расширения) */}
   <input 
     type="text" 
     placeholder="Пароль" 

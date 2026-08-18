@@ -24,7 +24,7 @@ func main() {
 		"dist":         true,
 		"build":        true,
 		".vscode":      true,
-		"docs":         true, // если сваггер докс слишком большой
+		"docs":         true,
 	}
 
 	// Расширения файлов, которые не нужно читать (бинарники, картинки)
@@ -32,7 +32,7 @@ func main() {
 		".exe": true, ".dll": true, ".so": true,
 		".png": true, ".jpg": true, ".svg": true, ".ico": true,
 		".zip": true, ".pdf": true, ".tar": true, ".gz": true,
-		".sum": true, // go.sum обычно не нужен для анализа логики
+		".sum": true,
 	}
 
 	fmt.Println("Начинаю сборку проекта...")

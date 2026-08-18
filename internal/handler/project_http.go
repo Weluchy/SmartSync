@@ -111,7 +111,7 @@ func (h *ProjectHandler) addMember(c *gin.Context) {
 	projectID, _ := strconv.Atoi(c.Param("project_id"))
 	var req struct {
 		Username string `json:"username" binding:"required"`
-		Role     string `json:"role" binding:"required"` // Добавили поле
+		Role     string `json:"role" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&req); err != nil {

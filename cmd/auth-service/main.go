@@ -36,7 +36,7 @@ func main() {
 	}
 	defer db.Close()
 
-	// Retry Pattern: цикл ожидания базы данных
+	// Цикл ожидания базы данных
 	maxRetries := 5
 	for i := 0; i < maxRetries; i++ {
 		err = db.Ping()

@@ -39,7 +39,6 @@ export default function KanbanBoard({ projectId, onTasksChange, onViewUser }) {
     if (!projectId) return;
     try {
       const data = await api.get(`/projects/${projectId}/tasks`);
-      // Эндпоинт возвращает {tasks: [...], dependencies: [...]}
       const taskList = data?.tasks || data || [];
       setTasks(taskList);
       if (onTasksChange) onTasksChange(taskList);
@@ -81,8 +80,7 @@ export default function KanbanBoard({ projectId, onTasksChange, onViewUser }) {
   const deleteTask = async (e, id) => {
     e.stopPropagation();
     try {
-      // heal=true — автоматическое сшивание графа: 
-      // зависевшие от удаляемой задачи переходят на те задачи, от которых зависела удаляемая
+      // heal=true — автоматически перестраиваем граф после удаления
       await api.delete(`/tasks/${id}?heal=true`);
       toast('Задача удалена. Граф перестроен.', {
         icon: '🗑️',
@@ -108,7 +106,6 @@ export default function KanbanBoard({ projectId, onTasksChange, onViewUser }) {
     }
   };
 
-  // Inline-редактирование названия
   const startEditTitle = (task) => {
     setEditingTitleId(task.id);
     setEditingTitle(task.title);
@@ -120,12 +117,11 @@ const saveEditTitle = async () => {
       return;
     }
     try {
-      // Находим текущую задачу, чтобы не потерять ее данные
       const taskToUpdate = tasks.find(t => t.id === editingTitleId);
       
       await api.put(`/tasks/${editingTitleId}`, { 
-        ...taskToUpdate, // Отправляем все старые поля (opt, real, pess, assignee_id)
-        title: editingTitle.trim() // Перезаписываем только название
+        ...taskToUpdate,
+        title: editingTitle.trim()
       });
       
       setEditingTitleId(null);
@@ -138,7 +134,6 @@ const saveEditTitle = async () => {
     }
   };
 
-  // Batch-операции
   const toggleSelect = (id) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
@@ -199,7 +194,7 @@ const saveEditTitle = async () => {
         if (data.project_id === Number(projectId)) {
           loadTasks();
           
-          // Push-уведомление через тост, если назначили этого пользователя
+          // Показываем уведомление, если назначили этого пользователя
           if (data.assignee_id && Number(data.assignee_id) === userId) {
             toast(`Вас назначили ответственным за задачу`, {
               icon: '📋',
@@ -217,7 +212,6 @@ const saveEditTitle = async () => {
     return () => { if (ws.readyState === 1) ws.close(); };
   }, [loadTasks, loadMembers, loadMilestones, projectId]);
 
-  // Фильтрация
   let filteredTasks = tasks.filter(t => {
     if (searchQuery && !t.title.toLowerCase().includes(searchQuery.toLowerCase())) return false;
     if (filterStatus !== 'all' && t.status !== filterStatus) return false;
@@ -233,7 +227,6 @@ const saveEditTitle = async () => {
     return true;
   });
 
-  // Сортировка
   filteredTasks = [...filteredTasks].sort((a, b) => {
     switch (sortBy) {
       case 'priority': return (b.priority_score || 0) - (a.priority_score || 0);
@@ -283,7 +276,6 @@ const saveEditTitle = async () => {
               <option value="unassigned">Не назначены</option>
               {members.map(m => <option key={m.user_id} value={m.user_id}>{m.username}</option>)}
             </select>
-            {/* Фильтр по вехам */}
             <select value={filterMilestone} onChange={e => setFilterMilestone(e.target.value)}
               className="text-xs border rounded-lg p-1.5 outline-none" style={{ backgroundColor: 'var(--bg-input)', color: 'var(--text-secondary)', borderColor: 'var(--border)' }}>
               <option value="all">Все вехи</option>
@@ -291,7 +283,6 @@ const saveEditTitle = async () => {
               {milestones.map(m => <option key={m.id} value={m.id}>{m.title}</option>)}
             </select>
           </div>
-          {/* Тумблер критического пути */}
           <button
             onClick={() => setShowCritical(!showCritical)}
             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
@@ -302,7 +293,6 @@ const saveEditTitle = async () => {
             <Flame size={14} className={showCritical ? 'text-red-500' : ''} />
             Крит. путь
           </button>
-          {/* Batch-панель */}
           {selectedIds.size > 0 && (
             <div className="flex items-center gap-2 bg-blue-50 px-3 py-1.5 rounded-lg">
               <span className="text-xs font-bold text-blue-600">{selectedIds.size}</span>
@@ -345,7 +335,7 @@ const saveEditTitle = async () => {
                     let deadlineStr = '', exactDate = '';
                     let deadlineTime = 0;
 
-                    // Умный выбор: Хард-дедлайн или Agile-дедлайн
+                    // Выбираем: жесткий дедлайн или расчётный
                     if (task.deadline_at && task.deadline_at > 0) {
                       deadlineTime = task.deadline_at;
                     } else if (isDateValid && duration > 0) {
@@ -362,7 +352,6 @@ const saveEditTitle = async () => {
                         if (diff < 0) {
                           deadlineStr = 'Просрочено!';
                         } else {
-                          // Красивое разделение на месяцы, недели, дни, часы и минуты
                           const totalDays = Math.floor(diff / (1000 * 60 * 60 * 24));
                           const months = Math.floor(totalDays / 30);
                           const weeks = Math.floor((totalDays % 30) / 7);
@@ -374,15 +363,14 @@ const saveEditTitle = async () => {
                           if (months > 0) parts.push(`${months} мес.`);
                           if (weeks > 0) parts.push(`${weeks} нед.`);
                           if (days > 0) parts.push(`${days} дн.`);
-                          if (hours > 0 && months === 0) parts.push(`${hours} ч.`); // Скрываем часы, если счет идет на месяцы
-                          if (mins > 0 && totalDays === 0) parts.push(`${mins} мин.`); // Показываем минуты, только если осталось меньше суток
+                          if (hours > 0 && months === 0) parts.push(`${hours} ч.`);
+                          if (mins > 0 && totalDays === 0) parts.push(`${mins} мин.`);
                           
                           deadlineStr = 'Ост. ' + (parts.join(' ') || '< 1 мин.');
                         }
                       }
                     }
 
-                    // Находим название вехи (спринта) для этой карточки
                     const taskMilestone = milestones.find(m => m.id === task.milestone_id);
 
                     return (
@@ -404,7 +392,6 @@ const saveEditTitle = async () => {
                             </button>
                             <span className="text-[10px] font-black uppercase" style={{ color: isCritical ? '#ef4444' : 'var(--text-muted)' }}>ID-{task.id}</span>
                             
-                            {/* БЕЙДЖ ВЕХИ */}
                             {taskMilestone && (
                               <span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-purple-100 text-purple-700 flex items-center gap-1 border border-purple-200">
                                 <Target size={10} /> {taskMilestone.title}
@@ -416,7 +403,6 @@ const saveEditTitle = async () => {
                           <button onClick={e => deleteTask(e, task.id)} className="opacity-0 group-hover:opacity-100 transition-opacity ml-2 shrink-0" style={{ color: 'var(--text-muted)' }}><Trash2 size={14} /></button>
                         </div>
 
-                        {/* Inline-редактирование названия */}
                         {editingTitleId === task.id ? (
                           <input autoFocus value={editingTitle} onChange={e => setEditingTitle(e.target.value)}
                             onBlur={saveEditTitle} onKeyDown={e => { if (e.key === 'Enter') saveEditTitle(); if (e.key === 'Escape') setEditingTitleId(null); }}
@@ -472,7 +458,6 @@ const saveEditTitle = async () => {
                           </div>
                         )}
 
-                        {/* Дата создания */}
                         <div className="text-[9px] mt-2" style={{ color: 'var(--text-muted)' }}>
                           Создано: {createdDate.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                         </div>

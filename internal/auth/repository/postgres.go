@@ -22,7 +22,7 @@ func (r *AuthRepository) GetUsersNames(ids []int) (map[string]string, error) {
 		return result, nil
 	}
 
-	// ИСПРАВЛЕНИЕ: NULLIF превращает пустую строку в NULL, чтобы COALESCE сработал
+	// NULLIF превращает пустую строку в NULL, чтобы COALESCE подставил username
 	query := `SELECT id, COALESCE(NULLIF(full_name, ''), username) FROM users WHERE id = ANY($1)`
 	rows, err := r.db.Query(query, pq.Array(ids))
 	if err != nil {

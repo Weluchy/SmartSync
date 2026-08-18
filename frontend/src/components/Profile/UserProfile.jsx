@@ -19,7 +19,7 @@ export default function UserProfile() {
       const data = await api.get('/user/profile');
       if (data) {
         setProfile(prev => ({ ...prev, ...data }));
-        // ФИКС: Сохраняем ID из профиля, чтобы он не терялся
+        // Сохраняем ID из профиля
         if (data.id) {
           localStorage.setItem('userId', data.id);
           setUserId(data.id);

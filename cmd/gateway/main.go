@@ -175,7 +175,7 @@ func main() {
 
 		log.Println("🟢 Клиент подключился к WebSocket!")
 
-		// ИССЛЕДОВАНИЕ: Используем АСИНХРОННУЮ подписку (Event-Driven)
+		// Подписываемся на события обновления проектов
 		sub, err := nc.Subscribe("project.updated", func(msg *nats.Msg) {
 			log.Printf("📨 NATS поймал событие! Пушим в браузер: %s\n", string(msg.Data))
 			err := ws.WriteMessage(websocket.TextMessage, msg.Data)
@@ -337,15 +337,12 @@ func reverseProxy(target string, cb *gobreaker.CircuitBreaker) gin.HandlerFunc {
 			return nil, nil
 		})
 
-		// Обработка состояния разомкнутой цепи
-		if err != nil {
-			if err == gobreaker.ErrOpenState {
-				// Цепь разомкнута: рубим запрос сразу, не нагружая упавший сервис!
-				c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
-					"error": "Система перегружена. Включился предохранитель (Circuit Breaker). Подождите 7 секунд.",
-					"state": "OPEN",
-				})
-			}
+		// Если цепь разомкнута, сразу возвращаем ошибку, не нагружая упавший сервис
+		if err == gobreaker.ErrOpenState {
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
+				"error": "Система перегружена. Включился предохранитель (Circuit Breaker). Подождите 7 секунд.",
+				"state": "OPEN",
+			})
 		}
 	}
 }

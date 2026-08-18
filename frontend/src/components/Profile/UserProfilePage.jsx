@@ -9,12 +9,10 @@ export default function UserProfilePage({ projectId, userId, onBack }) {
 
   useEffect(() => {
     if (!userId) return;
-    // Получаем данные пользователя
     api.get(`/users/${userId}`).then(data => {
       setUser(data);
     }).catch(() => setUser({ username: `ID ${userId}`, full_name: '' }));
     
-    // Загружаем задачи проекта и фильтруем по пользователю
     if (projectId) {
       api.get(`/projects/${projectId}/tasks`).then(data => {
         setTasks((data || []).filter(t => 
@@ -31,12 +29,10 @@ export default function UserProfilePage({ projectId, userId, onBack }) {
     <div className="h-full w-full p-6 overflow-y-auto" style={{ backgroundColor: 'var(--bg-page)' }}>
       <div className="max-w-3xl mx-auto space-y-6">
 
-        {/* Кнопка назад */}
         <button onClick={onBack} className="flex items-center gap-2 text-sm font-bold mb-2" style={{ color: 'var(--text-secondary)' }}>
           <ArrowLeft size={16} /> Назад
         </button>
 
-        {/* Карточка профиля */}
         <div className="rounded-2xl p-8 border shadow-xl" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
           <div className="flex items-center gap-6">
             <div className="w-20 h-20 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center shadow-inner">
@@ -57,7 +53,6 @@ export default function UserProfilePage({ projectId, userId, onBack }) {
           </div>
         </div>
 
-        {/* Статистика */}
         <div className="grid grid-cols-3 gap-4">
           <div className="rounded-xl p-5 border" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
             <div className="flex items-center gap-2 mb-2">
@@ -82,7 +77,6 @@ export default function UserProfilePage({ projectId, userId, onBack }) {
           </div>
         </div>
 
-        {/* Список задач пользователя */}
         {tasks.length > 0 && (
           <div className="rounded-xl border overflow-hidden" style={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border)' }}>
             <div className="p-4 border-b" style={{ borderColor: 'var(--border)' }}>

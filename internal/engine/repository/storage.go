@@ -34,7 +34,6 @@ func (s *Storage) GetProjectTasks(projectID int) ([]models.Task, error) {
 	return tasks, nil
 }
 
-// Добавь этот новый метод в этот же файл:
 func (s *Storage) GetTaskDependencies(projectID int) ([]models.GraphEdge, error) {
 	rows, err := s.db.Query(`
 		SELECT d.depends_on_id, d.task_id 
@@ -63,12 +62,10 @@ func (s *Storage) UpdateTaskMetrics(id int, duration, priority float64, deadline
 func (s *Storage) GetFullGraph(projectID int) (*models.GraphData, error) {
 	graph := &models.GraphData{}
 
-	// ПРИКАЗ: Добавили status в SELECT для Графа
 	rowsNodes, _ := s.db.Query("SELECT id, title, opt, real, pess, duration_hours, priority_score, status FROM tasks WHERE project_id = $1", projectID)
 	defer rowsNodes.Close()
 	for rowsNodes.Next() {
 		var t models.Task
-		// ПРИКАЗ: Добавили &t.Status в Scan
 		rowsNodes.Scan(&t.ID, &t.Title, &t.Opt, &t.Real, &t.Pess, &t.DurationHours, &t.PriorityScore, &t.Status)
 		graph.Nodes = append(graph.Nodes, t)
 	}

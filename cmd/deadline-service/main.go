@@ -72,7 +72,7 @@ func main() {
 				var t taskForCheck
 				rows.Scan(&t.ID, &t.Title, &t.ProjectID, &t.Status, &t.CreatedAt, &t.DurHours, &t.DeadlineAt)
 
-				// ВЫБИРАЕМ: Жесткий дедлайн ИЛИ PERT-дедлайн
+				// Выбираем: жесткий дедлайн или PERT-дедлайн
 				var deadline time.Time
 				if t.DeadlineAt.Valid && t.DeadlineAt.Int64 > 0 {
 					deadline = time.UnixMilli(t.DeadlineAt.Int64)

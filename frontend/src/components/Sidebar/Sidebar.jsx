@@ -20,7 +20,7 @@ export default function Sidebar({ projects, currentProjectId, onSelectProject, o
   const [servicesStatus, setServicesStatus] = useState({});
   const [editingProject, setEditingProject] = useState(null);
 
-  // Пинг микросервисов
+  // Проверка доступности микросервисов
   const pingServices = useCallback(async () => {
     const results = {};
     for (const svc of MICROSERVICES) {
@@ -170,7 +170,6 @@ const changeRole = async (userId, newRole) => {
         })}
       </div>
 
-      {/* Участники и приглашение */}
       {currentProjectId && (
         <div className="p-4 border-t" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card-hover)' }}>
           <div className="flex items-center gap-2 mb-3 px-2" style={{ color: 'var(--text-muted)' }}>
@@ -237,7 +236,6 @@ const changeRole = async (userId, newRole) => {
         </div>
       )}
 
-      {/* Индикатор здоровья микросервисов */}
       <div className="p-3 border-t flex items-center gap-3 px-4" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--bg-card-hover)' }}>
         <Activity size={12} style={{ color: 'var(--text-muted)' }} />
         {MICROSERVICES.map(svc => (

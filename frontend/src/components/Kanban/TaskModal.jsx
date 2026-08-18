@@ -12,9 +12,9 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
   const [logs, setLogs] = useState([]);
   const [comments, setComments] = useState([]);
   const [newComment, setNewComment] = useState('');
-  const [isPreview, setIsPreview] = useState(false); // Для Markdown
-  const [activeTab, setActiveTab] = useState('details'); // details, logs, comments
-// Помощник для правильного отображения локального времени в инпуте
+  const [isPreview, setIsPreview] = useState(false);
+  const [activeTab, setActiveTab] = useState('details');
+  // Форматируем время для input type="datetime-local"
   const formatLocalDatetime = (ms) => {
     if (!ms) return '';
     const d = new Date(ms);
@@ -32,13 +32,10 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
         description: initialData.description || '', 
         assignee_id: initialData.assignee_id ?? '',
         milestone_id: initialData.milestone_id ?? '',
-        // Добавляем конвертацию миллисекунд в формат для <input type="datetime-local">
         deadline_at: initialData.deadline_at ? formatLocalDatetime(initialData.deadline_at) : ''
       });
       if (initialData.id) {
-        // Грузим логи
         api.get(`/logs/${initialData.id}`).then(res => setLogs(res || [])).catch(() => {});
-        // Грузим комментарии (ожидаем, что бэкенд отдает массив)
         api.get(`/tasks/${initialData.id}/comments`).then(res => setComments(res || [])).catch(() => {});
       }
     } else {
@@ -57,7 +54,7 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
       ...formData,
       assignee_id: formData.assignee_id ? parseInt(formData.assignee_id, 10) : null,
       milestone_id: formData.milestone_id ? parseInt(formData.milestone_id, 10) : null,
-      deadline_at: formData.deadline_at ? new Date(formData.deadline_at).getTime() : null, // <-- Добавлено
+      deadline_at: formData.deadline_at ? new Date(formData.deadline_at).getTime() : null,
       opt: parseInt(formData.opt, 10) || 0,
       real: parseInt(formData.real, 10) || 0,
       pess: parseInt(formData.pess, 10) || 0,
@@ -73,7 +70,6 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
       toast.success('Комментарий добавлен', {
         style: { background: '#1a1a2e', color: '#7ac9a7', border: '1px solid #7ac9a7' }
       });
-      // Обновляем список
       const res = await api.get(`/tasks/${initialData.id}/comments`);
       setComments(res || []);
     } catch (err) { 
@@ -87,7 +83,6 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl h-[85vh] flex flex-col">
-        {/* Header */}
         <div className="flex justify-between items-center p-6 border-b shrink-0">
           <h2 className="text-xl font-bold text-gray-800">
             {initialData ? `Задача ID-${initialData.id}` : 'Новая задача'}
@@ -95,7 +90,6 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors"><X size={24} /></button>
         </div>
 
-        {/* Tabs */}
         {initialData && (
           <div className="flex border-b px-6 gap-6 shrink-0 text-sm font-bold text-gray-500">
             <button onClick={() => setActiveTab('details')} className={`py-3 border-b-2 transition-colors ${activeTab === 'details' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-gray-800'}`}>Детали</button>
@@ -106,7 +100,6 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
           </div>
         )}
 
-        {/* Scrollable Body */}
         <div className="flex-1 overflow-y-auto p-6 bg-gray-50/50">
           
           {activeTab === 'details' && (
@@ -221,7 +214,6 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
 
         </div>
 
-        {/* Footer */}
         {activeTab === 'details' && (
           <div className="p-4 border-t shrink-0 flex gap-3 bg-white">
             <button type="button" onClick={onClose} className="flex-1 py-2.5 border rounded-xl font-bold hover:bg-gray-50">Отмена</button>

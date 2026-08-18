@@ -101,8 +101,7 @@ func (r *ProjectRepository) RenameProject(projectID, userID int, newName string)
 	return err
 }
 
-// Приглашение друга по логину
-// Обновленный AddMember
+// AddMember приглашает пользователя в проект по логину
 func (r *ProjectRepository) AddMember(projectID, ownerID int, username string, role string) error {
 	var actualOwner int
 	err := r.db.QueryRow("SELECT owner_id FROM projects WHERE id = $1", projectID).Scan(&actualOwner)
@@ -116,7 +115,6 @@ func (r *ProjectRepository) AddMember(projectID, ownerID int, username string, r
 		return fmt.Errorf("пользователь не найден")
 	}
 
-	// Используем переданную роль вместо жесткого 'editor'
 	_, err = r.db.Exec(`
 		INSERT INTO project_members (project_id, user_id, role) 
 		VALUES ($1, $2, $3) 
@@ -125,7 +123,6 @@ func (r *ProjectRepository) AddMember(projectID, ownerID int, username string, r
 	return err
 }
 
-// Новый метод UpdateMemberRole
 func (r *ProjectRepository) UpdateMemberRole(projectID, ownerID, targetUserID int, newRole string) error {
 	var actualOwner int
 	r.db.QueryRow("SELECT owner_id FROM projects WHERE id = $1", projectID).Scan(&actualOwner)
@@ -160,7 +157,6 @@ func (r *ProjectRepository) GetProjectMembers(projectID int) ([]models.ProjectMe
 	return members, nil
 }
 
-// GetInvitedProjects возвращает проекты, куда пользователь приглашён (роль != owner)
 func (r *ProjectRepository) ArchiveProject(projectID, userID int) error {
 	result, err := r.db.Exec("UPDATE projects SET archived = true WHERE id = $1 AND owner_id = $2", projectID, userID)
 	if err != nil {

@@ -24,11 +24,11 @@ func getEnv(key, fallback string) string {
 }
 
 func main() {
-	// 1. Читаем адреса из сети Docker (или берем локальные для тестов)
+	// Читаем адреса из переменных окружения
 	dbURL := getEnv("DATABASE_URL", "postgres://user:password@127.0.0.1:5433/smartsync?sslmode=disable")
 	natsURL := getEnv("NATS_URL", "nats://localhost:4222")
 
-	// 2. Подключение к Postgres
+	// Подключение к Postgres
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Fatal(err)
@@ -40,18 +40,18 @@ func main() {
 		log.Fatal("Priority Service: База данных недоступна: ", err)
 	}
 
-	// 3. Подключение к NATS
+	// Подключение к NATS
 	nc, err := nats.Connect(natsURL)
 	if err != nil {
 		log.Fatal("Priority Service: Ошибка подключения к NATS: ", err)
 	}
 	defer nc.Close()
 
-	// 4. Инициализация
+	// Инициализация
 	repo := repository.NewStorage(db)
 	calc := service.NewCalculator(repo)
 
-	// 5. ТВОЯ ЛОГИКА ПОДПИСКИ
+	// Подписываемся на события обновления проектов
 	nc.Subscribe("project.updated", func(m *nats.Msg) {
 		var payload struct {
 			ProjectID int `json:"project_id"`

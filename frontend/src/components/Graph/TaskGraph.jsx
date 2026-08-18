@@ -74,7 +74,7 @@ export default function TaskGraph({ projectId }) {
   const loadGraphData = useCallback(async () => {
     if (!projectId || !containerRef.current) return;
     try {
-      // ИСПРАВЛЕНИЕ 1: Взломщик кэша. Добавляем уникальное время в URL, чтобы браузер 100% скачал новые веса из БД.
+      // Добавляем уникальный параметр, чтобы браузер не кэшировал ответ
       const t = new Date().getTime();
       const data = await api.get(`/projects/${projectId}/graph?_t=${t}`);
       const msData = await api.get(`/projects/${projectId}/milestones?_t=${t}`).catch(() => []); 
@@ -153,10 +153,8 @@ export default function TaskGraph({ projectId }) {
         const shortTitle = t.title.length > 22 ? t.title.substring(0, 22) + '...' : t.title;
         const assignee = t.assignee_name ? t.assignee_name.split(' ')[0] : 'Нет исп.';
         
-        // ИСПРАВЛЕНИЕ 2: Вернули PERT вес (🔥) на саму карточку!
         const labelStr = `*ID-${t.id}* ${shortTitle}\n👤 ${assignee}   |   ⏳ ${duration.toFixed(1)}ч   |   🔥 ${score.toFixed(1)}${milestoneLabel}`;
 
-        // Форматируем красивую HTML-карточку для наведения
         const statusMap = {
           'todo': { text: 'Бэклог', bg: '#f3f4f6', color: '#4b5563' },
           'in_progress': { text: 'В работе', bg: '#dbeafe', color: '#1d4ed8' },
@@ -224,7 +222,6 @@ export default function TaskGraph({ projectId }) {
         smooth: { type: 'cubicBezier', forceDirection: 'horizontal' }
       }));
 
-      // Создаем холст, если его нет
       if (!networkRef.current) {
         networkRef.current = new Network(containerRef.current, { nodes, edges }, {
           physics: {
@@ -247,7 +244,7 @@ export default function TaskGraph({ projectId }) {
 
         networkRef.current.on('dragEnd', savePositions);
         
-        // Обработчик СОЗДАНИЯ связи
+        // Обработчик создания связи
         networkRef.current.on("click", (params) => {
           if (params.nodes.length === 2) {
             const [from, to] = params.nodes;
@@ -261,14 +258,13 @@ export default function TaskGraph({ projectId }) {
                .then(() => { 
                  toast.success('Связь создана');
                  networkRef.current.unselectAll(); 
-                 // Даем priority-service (Go) время сохранить в БД перед обновлением фронта
                  setTimeout(loadGraphData, 600); 
                })
                .catch(err => { toast.error(err.message); networkRef.current.unselectAll(); });
           }
         });
 
-        // Обработчик УДАЛЕНИЯ связи
+        // Обработчик удаления связи
         networkRef.current.on("doubleClick", (params) => {
           if (params.edges.length > 0) {
             const edgeId = params.edges[0];
@@ -296,7 +292,7 @@ export default function TaskGraph({ projectId }) {
           }
         });
       } else {
-        // УМНОЕ ОБНОВЛЕНИЕ БЕЗ СБРОСА КООРДИНАТ
+        // Обновляем данные без сброса координат
         const nodesDataSet = networkRef.current.body.data.nodes;
         const edgesDataSet = networkRef.current.body.data.edges;
         
@@ -329,7 +325,7 @@ export default function TaskGraph({ projectId }) {
     } catch (err) { console.error("Graph load error:", err); }
   }, [projectId, loadSavedPositions, savePositions, searchQuery, filterStatus, filterAssignee]);
 
-  // WebSocket: Граф сам обновляется, как только математический движок заканчивает расчеты!
+  // Граф обновляется автоматически через WebSocket после пересчёта
   useEffect(() => {
     loadGraphData();
     const ws = new WebSocket('ws://localhost:8000/ws');
@@ -337,7 +333,7 @@ export default function TaskGraph({ projectId }) {
       try {
         const data = JSON.parse(event.data);
         if (data.project_id === Number(projectId)) {
-          setTimeout(loadGraphData, 600); // Даем 600мс фору Go-сервису
+          setTimeout(loadGraphData, 600);
         }
       } catch(err) { console.error("WS parse error:", err); }
     };
@@ -375,7 +371,6 @@ export default function TaskGraph({ projectId }) {
   return (
     <div className="h-full w-full bg-gray-50 p-6 overflow-hidden">
       <div className="w-full h-full flex flex-col bg-white rounded-2xl shadow-xl border overflow-hidden transition-all">
-        {/* Верхняя панель с фильтрами */}
         <div className="h-[72px] min-h-[72px] px-8 border-b flex items-center gap-3 bg-white z-10">
           <div className="flex items-center gap-2 flex-1">
             <Search size={14} className="text-gray-400" />
@@ -411,9 +406,7 @@ export default function TaskGraph({ projectId }) {
             </button>
           </div>
         </div>
-        {/* Контейнер графа */}
         <div ref={containerRef} className="flex-1 w-full bg-white" />
-        {/* Подпись */}
         <div className="h-7 px-8 border-t flex items-center gap-4 bg-gray-50 text-[10px] text-gray-400">
           <span>🟢 Готово</span>
           <span>🔵 В работе</span>

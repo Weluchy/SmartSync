@@ -1,0 +1,146 @@
+# Cloud-версия docker-compose для деплоя на VPS (AWS t2.micro / Hetzner / любой сервер)
+#
+# Отличия от локальной версии:
+# - Нет PostgreSQL, MongoDB, Redis (используются managed-сервисы)
+# - Нет фронтенда (на Cloudflare Pages)
+# - Переменные окружения берутся из .env.cloud
+# - Используется сеть host или bridge с явными портами
+
+version: '3.8'
+
+services:
+  nats:
+    image: nats:latest
+    container_name: smartsync_nats
+    ports:
+      - "4222:4222"
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: smartsync_prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    restart: unless-stopped
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: smartsync_grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=${GF_SECURITY_ADMIN_PASSWORD:-admin}
+      - GF_INSTALL_PLUGINS=
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+  gateway:
+    build:
+      context: .
+      args:
+        SERVICE_NAME: gateway
+        TARGETARCH: ${TARGETARCH:-amd64}
+    image: smartsync-gateway:latest
+    container_name: smartsync_gateway
+    ports:
+      - "8000:8000"
+    depends_on:
+      - nats
+    restart: unless-stopped
+    environment:
+      - JWT_SECRET=${JWT_SECRET}
+      - NATS_URL=nats://nats:4222
+      - AUTH_SERVICE_URL=http://auth-service:8081
+      - TASK_SERVICE_URL=http://task-service:8080
+      - AUDIT_SERVICE_URL=http://audit-service:8083
+
+  auth-service:
+    build:
+      context: .
+      args:
+        SERVICE_NAME: auth-service
+        TARGETARCH: ${TARGETARCH:-amd64}
+    image: smartsync-auth-service:latest
+    container_name: smartsync_auth_service
+    ports:
+      - "8081:8081"
+    depends_on:
+      - nats
+    restart: unless-stopped
+    environment:
+      - JWT_SECRET=${JWT_SECRET}
+      - DATABASE_URL=${DATABASE_URL}
+
+  task-service:
+    build:
+      context: .
+      args:
+        SERVICE_NAME: task-service
+        TARGETARCH: ${TARGETARCH:-amd64}
+    image: smartsync-task-service:latest
+    container_name: smartsync_task_service
+    ports:
+      - "8080:8080"
+    depends_on:
+      - nats
+    restart: unless-stopped
+    environment:
+      - JWT_SECRET=${JWT_SECRET}
+      - NATS_URL=nats://nats:4222
+      - REDIS_ADDR=${REDIS_ADDR}
+      - DATABASE_URL=${DATABASE_URL}
+
+  priority-service:
+    build:
+      context: .
+      args:
+        SERVICE_NAME: priority-service
+        TARGETARCH: ${TARGETARCH:-amd64}
+    image: smartsync-priority-service:latest
+    container_name: smartsync_priority_service
+    depends_on:
+      - nats
+    restart: unless-stopped
+    environment:
+      - JWT_SECRET=${JWT_SECRET}
+      - NATS_URL=nats://nats:4222
+      - REDIS_ADDR=${REDIS_ADDR}
+      - DATABASE_URL=${DATABASE_URL}
+
+  deadline-service:
+    build:
+      context: .
+      args:
+        SERVICE_NAME: deadline-service
+        TARGETARCH: ${TARGETARCH:-amd64}
+    image: smartsync-deadline-service:latest
+    container_name: smartsync_deadline_service
+    depends_on:
+      - nats
+    restart: unless-stopped
+    environment:
+      - JWT_SECRET=${JWT_SECRET}
+      - NATS_URL=nats://nats:4222
+      - DATABASE_URL=${DATABASE_URL}
+      - INTERVAL_SECONDS=60
+
+  audit-service:
+    build:
+      context: .
+      args:
+        SERVICE_NAME: audit-service
+        TARGETARCH: ${TARGETARCH:-amd64}
+    image: smartsync-audit-service:latest
+    container_name: smartsync_audit_service
+    depends_on:
+      - nats
+    restart: unless-stopped
+    environment:
+      - JWT_SECRET=${JWT_SECRET}
+      - NATS_URL=nats://nats:4222
+      - MONGO_URI=${MONGO_URI}

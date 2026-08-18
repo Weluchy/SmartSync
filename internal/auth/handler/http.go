@@ -43,7 +43,6 @@ func (h *AuthHandler) getUsersBulk(c *gin.Context) {
 		return
 	}
 
-	// В идеале вызывать через сервис, но для простоты стучимся в репо
 	names, err := h.service.Repo().GetUsersNames(req.IDs)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "db error"})
@@ -86,10 +85,7 @@ func (h *AuthHandler) login(c *gin.Context) {
 
 // Получение профиля
 func (h *AuthHandler) getProfile(c *gin.Context) {
-	// Gateway прокидывает X-User-ID, но мы его парсим
 	userIDStr := c.GetHeader("X-User-ID")
-
-	// Пока обращаемся напрямую к репозиторию для скорости (в идеале через сервис)
 	user, err := h.service.Repo().GetProfileByID(parseID(userIDStr))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Профиль не найден"})
@@ -133,7 +129,6 @@ func parseID(idStr string) int {
 func (h *AuthHandler) getUserByID(c *gin.Context) {
 	idStr := c.Param("id")
 
-	// Метод GetProfileByID уже есть в твоем репо (используется для своего профиля)
 	user, err := h.service.Repo().GetProfileByID(parseID(idStr))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден"})

@@ -13,7 +13,6 @@ export default function ProjectSettingsModal({ isOpen, onClose, project, onProje
   const [deleteConfirm, setDeleteConfirm] = useState('');
 
   useEffect(() => {
-    // ИСПРАВЛЕНИЕ: Теперь мы берем данные напрямую из объекта project
     if (isOpen && project) {
       setNewName(project.name || '');
       setDeleteConfirm('');
@@ -31,7 +30,7 @@ export default function ProjectSettingsModal({ isOpen, onClose, project, onProje
         style: { background: '#1a1a2e', color: '#7ac9a7', border: '1px solid #7ac9a7' }
       });
       onProjectUpdated?.();
-      window.location.reload(); // Чтобы обновилось в боковой панели
+      window.location.reload();
     } catch (err) {
       toast.error(err.message, {
         style: { background: '#1a1a2e', color: '#f87171', border: '1px solid #f87171' }
@@ -42,7 +41,7 @@ export default function ProjectSettingsModal({ isOpen, onClose, project, onProje
   const handleInvite = async (e) => {
     e.preventDefault();
     
-    // ДОБАВЛЕНО: Проверка, есть ли уже пользователь в проекте (включая создателя)
+    // Проверяем, есть ли уже пользователь в проекте
     const isAlreadyMember = members.some(m => m.username.toLowerCase() === inviteUser.trim().toLowerCase());
     if (isAlreadyMember) {
       toast.error('Этот пользователь уже есть в проекте', {
@@ -98,7 +97,7 @@ export default function ProjectSettingsModal({ isOpen, onClose, project, onProje
   };
 
   const handleDeleteProject = async () => {
-    if (deleteConfirm !== project.name) return; // Защита от случайного удаления
+    if (deleteConfirm !== project.name) return;
     try {
       await api.delete(`/projects/${project.id}`);
       toast('Проект удалён', {
@@ -118,13 +117,11 @@ export default function ProjectSettingsModal({ isOpen, onClose, project, onProje
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg max-h-[80vh] flex flex-col">
-        {/* Header */}
         <div className="flex justify-between items-center p-6 border-b shrink-0">
           <h2 className="text-lg font-bold text-gray-800">Настройки проекта</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors"><X size={24} /></button>
         </div>
 
-        {/* Tabs */}
         <div className="flex border-b px-6 gap-6 shrink-0 text-sm font-bold text-gray-500">
           <button onClick={() => setActiveTab('rename')} className={`py-3 border-b-2 transition-colors flex items-center gap-2 ${activeTab === 'rename' ? 'border-blue-600 text-blue-600' : 'border-transparent hover:text-gray-800'}`}>
             <Edit3 size={14} /> Переименовать
@@ -137,7 +134,6 @@ export default function ProjectSettingsModal({ isOpen, onClose, project, onProje
           </button>
         </div>
 
-        {/* Body */}
         <div className="flex-1 overflow-y-auto p-6">
           {activeTab === 'rename' && (
             <div className="space-y-4">
