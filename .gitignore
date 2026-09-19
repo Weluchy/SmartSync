@@ -44,3 +44,5 @@ smartsync_context.txt
 load_test.js
 bench_test.go
 gather.go
+start.bat
+start.ps1
