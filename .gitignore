@@ -1,10 +1,8 @@
-# ---- Переменные окружения / секреты ----
-# Игнорируем все .env файлы (включая .env.cloud), кроме шаблонов-примеров
+
 .env
 .env.*
 !.env.example
 
-# ---- Node.js / frontend ----
 node_modules/
 dist/
 dist-ssr/
@@ -18,7 +16,6 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-# ---- Сборка / бинарники / артефакты ----
 *.exe
 *.exe~
 *.dll
@@ -33,7 +30,6 @@ gateway.exe
 priority-service.exe
 task-service.exe
 
-# ---- Редакторы / ОС ----
 .vscode/*
 !.vscode/extensions.json
 .idea
@@ -44,7 +40,6 @@ task-service.exe
 *.sln
 *.sw?
 
-# ---- Проектные вспомогательные файлы (не для репозитория) ----
 smartsync_context.txt
 load_test.js
 bench_test.go
