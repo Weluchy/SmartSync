@@ -7,3 +7,11 @@ frontend/dist
 smartsync_context.txt
 load_test.js
 bench_test.go
+audit-service.exe
+auth-service.exe
+deadline-service.exe
+gateway.exe
+gather.go
+smartsync_context.txt
+start.bat
+start.ps1
