@@ -54,7 +54,7 @@ func (r *TaskRepository) CreateTask(t *models.Task) (int, error) {
 		assignee = *t.AssigneeID
 	}
 
-	// Подготавливаем milestone_id и deadline_at для вставки
+	// всё необязательное для вставки кладём в interface, чтоб был null
 	var milestone interface{} = nil
 	if t.MilestoneID != nil && *t.MilestoneID != 0 {
 		milestone = *t.MilestoneID
@@ -85,7 +85,7 @@ func (r *TaskRepository) UpdateTask(t *models.Task) error {
 		assignee = *t.AssigneeID
 	}
 
-	// Подготавливаем milestone_id и deadline_at для обновления
+	// то же самое при обновлении
 	var milestone interface{} = nil
 	if t.MilestoneID != nil && *t.MilestoneID != 0 {
 		milestone = *t.MilestoneID
@@ -106,9 +106,7 @@ func (r *TaskRepository) UpdateTaskStatus(taskID int, status string) error {
 	return err
 }
 
-// DeleteTask удаляет задачу. При heal=true перестраивает зависимости графа:
-// все задачи, которые зависели от удаляемой, перенаправляются на те задачи,
-// от которых зависела удаляемая.
+// удаление с перестройкой связей: зависимые от неё перенаправляются на её родителей
 func (r *TaskRepository) DeleteTask(taskID, userID int, heal bool) error {
 	pid, err := r.GetProjectIDByTask(taskID)
 	if err != nil {
@@ -119,7 +117,7 @@ func (r *TaskRepository) DeleteTask(taskID, userID int, heal bool) error {
 	}
 
 	if heal {
-		// Находим задачи, которые зависели от удаляемой
+		// кто зависел от удаляемой
 		rowsDependents, err := r.db.Query(`SELECT task_id FROM dependencies WHERE depends_on_id = $1`, taskID)
 		if err == nil {
 			var dependents []int
@@ -130,7 +128,7 @@ func (r *TaskRepository) DeleteTask(taskID, userID int, heal bool) error {
 			}
 			rowsDependents.Close()
 
-			// Находим задачи, от которых зависела удаляемая
+			// от кого зависела она сама
 			rowsParents, err := r.db.Query(`SELECT depends_on_id FROM dependencies WHERE task_id = $1`, taskID)
 			var parents []int
 			if err == nil {
@@ -142,24 +140,22 @@ func (r *TaskRepository) DeleteTask(taskID, userID int, heal bool) error {
 				rowsParents.Close()
 			}
 
-			// Перенаправляем зависимости: dependents теперь зависят от parents
+			// dependents теперь зависят от parents
 			if len(parents) > 0 {
-				// Удаляем старые связи, где эта задача была depends_on
 				r.db.Exec(`DELETE FROM dependencies WHERE depends_on_id = $1`, taskID)
-				// Создаём новые: каждый dependent теперь зависит от каждого parent
+				// каждый dependent зависит от каждого parent
 				for _, dep := range dependents {
 					for _, par := range parents {
-						// Проверяем, не создаст ли это цикл
 						r.db.Exec(`INSERT INTO dependencies (task_id, depends_on_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`, dep, par)
 					}
 				}
 			} else {
-				// Нет родителей — просто удаляем связи, задачи становятся независимыми
+				// родителей нет - просто развязываем
 				r.db.Exec(`DELETE FROM dependencies WHERE depends_on_id = $1`, taskID)
 			}
 		}
 
-		// Удаляем все связи, где task_id = taskID (на кого ссылалась удаляемая)
+		// связи, где она сама ссылалась на других
 		r.db.Exec(`DELETE FROM dependencies WHERE task_id = $1`, taskID)
 	}
 

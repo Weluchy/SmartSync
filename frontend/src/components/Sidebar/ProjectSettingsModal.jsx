@@ -41,7 +41,7 @@ export default function ProjectSettingsModal({ isOpen, onClose, project, onProje
   const handleInvite = async (e) => {
     e.preventDefault();
     
-    // Проверяем, есть ли уже пользователь в проекте
+    // вдруг уже в проекте
     const isAlreadyMember = members.some(m => m.username.toLowerCase() === inviteUser.trim().toLowerCase());
     if (isAlreadyMember) {
       toast.error('Этот пользователь уже есть в проекте', {

@@ -1,4 +1,4 @@
-// Адрес API-шлюза: из переменной окружения или по умолчанию
+// шлюз: из env или по умолчанию /api
 const GATEWAY = import.meta.env.VITE_GATEWAY_URL || "/api";
 export const api = {
   async request(endpoint, options = {}) {
@@ -32,7 +32,7 @@ export const api = {
       throw new Error('Сессия истекла. Войдите снова.');
     }
     
-    // Для 204 No Content (например, DELETE)
+    // 204 (напр. delete) - без тела
     if (response.status === 204) {
       return null;
     }

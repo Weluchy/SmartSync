@@ -19,7 +19,6 @@ func init() {
 	}
 }
 
-// AuthMiddleware проверяет наличие и валидность JWT токена
 func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
@@ -29,10 +28,10 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Убираем слово "Bearer " из заголовка
+		// режем префикс "bearer "
 		tokenString := strings.TrimPrefix(authHeader, "Bearer ")
 		token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-			// Проверяем, что алгоритм подписи — HS256
+			// только hs256
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, fmt.Errorf("неожиданный метод подписи: %v", token.Header["alg"])
 			}
@@ -45,7 +44,7 @@ func AuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Достаем user_id из расшифрованного токена и кладем в контекст запроса
+		// user_id из токена -> в контекст запроса
 		claims, ok := token.Claims.(jwt.MapClaims)
 		if !ok {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Недействительный формат токена"})

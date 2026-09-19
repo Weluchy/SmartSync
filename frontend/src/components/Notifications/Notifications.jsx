@@ -7,7 +7,6 @@ export default function Notifications({ tasks, invitations = [], onSelectProject
   const [isOpen, setIsOpen] = useState(false);
   const userId = Number(localStorage.getItem('userId'));
 
-  // Уведомления из задач
   useEffect(() => {
     if (!tasks || !userId) return;
 
@@ -15,7 +14,7 @@ export default function Notifications({ tasks, invitations = [], onSelectProject
     const newNotifs = [];
 
     tasks.forEach(task => {
-      // Назначили задачу
+      // назначили тебе
       if (Number(task.assignee_id) === userId) {
         const stored = localStorage.getItem(`notif_assigned_${task.id}`);
         if (!stored) {
@@ -28,7 +27,7 @@ export default function Notifications({ tasks, invitations = [], onSelectProject
         }
       }
 
-      // Дедлайн скоро (меньше 4 часов)
+      // дедлайн ближе чем 4 часа
       if (task.deadline_at > 0 && Number(task.assignee_id) === userId) {
         const timeLeft = task.deadline_at - now;
         if (timeLeft > 0 && timeLeft < 4 * 3600000 && task.status !== 'done') {
@@ -45,7 +44,7 @@ export default function Notifications({ tasks, invitations = [], onSelectProject
         }
       }
 
-      // Статус изменился
+      // статус изменился
       const storedStatus = localStorage.getItem(`notif_status_${task.id}`);
       if (storedStatus && storedStatus !== task.status && Number(task.assignee_id) === userId) {
         newNotifs.push({
@@ -58,7 +57,7 @@ export default function Notifications({ tasks, invitations = [], onSelectProject
       localStorage.setItem(`notif_status_${task.id}`, task.status);
     });
 
-    // Приглашения
+    // приглашения
     if (invitations && invitations.length > 0) {
       invitations.forEach(inv => {
         const stored = localStorage.getItem(`notif_invite_${inv.id}`);
@@ -82,7 +81,7 @@ export default function Notifications({ tasks, invitations = [], onSelectProject
     }
   }, [tasks, userId, invitations]);
 
-  // При монтировании загружаем сохранённые
+  // подтягиваем сохранённые при монтировании
   useEffect(() => {
     const saved = JSON.parse(localStorage.getItem('notifications') || '[]');
     setNotifications(saved);

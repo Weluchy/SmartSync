@@ -74,7 +74,7 @@ export default function TaskGraph({ projectId }) {
   const loadGraphData = useCallback(async () => {
     if (!projectId || !containerRef.current) return;
     try {
-      // Добавляем уникальный параметр, чтобы браузер не кэшировал ответ
+      // уникальный параметр, чтоб браузер не кэшировал
       const t = new Date().getTime();
       const data = await api.get(`/projects/${projectId}/graph?_t=${t}`);
       const msData = await api.get(`/projects/${projectId}/milestones?_t=${t}`).catch(() => []); 
@@ -82,7 +82,7 @@ export default function TaskGraph({ projectId }) {
       let tasks = data?.tasks || data?.nodes || []; 
       const dependencies = data?.dependencies || data?.edges || [];
 
-      // Фильтры
+      // фильтры
       if (searchQuery) {
         const q = searchQuery.toLowerCase();
         tasks = tasks.filter(t =>
@@ -138,7 +138,7 @@ export default function TaskGraph({ projectId }) {
         const isInProgress = t.status === 'in_progress';
         const isCritical = criticalSet.has(t.id) && !isDone; 
 
-        // Цветовые схемы
+        // цвета
         let bg = '#ffffff', border = '#e5e7eb', text = '#1f2937'; 
         if (isDone) { bg = '#f0fdf4'; border = '#22c55e'; text = '#166534'; }
         else if (isCritical) { bg = '#fef2f2'; border = '#ef4444'; text = '#991b1b'; }
@@ -146,7 +146,7 @@ export default function TaskGraph({ projectId }) {
 
         const duration = t.duration_hours || ((t.opt + 4 * t.real + t.pess) / 6);
         
-        // Поиск вехи
+        // веха для задачи
         const taskMilestone = msData.find(m => m.id === t.milestone_id);
         const milestoneLabel = taskMilestone ? `   |   🎯 ${taskMilestone.title}` : '';
 
@@ -244,7 +244,7 @@ export default function TaskGraph({ projectId }) {
 
         networkRef.current.on('dragEnd', savePositions);
         
-        // Обработчик создания связи
+        // создание связи
         networkRef.current.on("click", (params) => {
           if (params.nodes.length === 2) {
             const [from, to] = params.nodes;
@@ -264,7 +264,7 @@ export default function TaskGraph({ projectId }) {
           }
         });
 
-        // Обработчик удаления связи
+        // удаление связи
         networkRef.current.on("doubleClick", (params) => {
           if (params.edges.length > 0) {
             const edgeId = params.edges[0];
@@ -292,7 +292,7 @@ export default function TaskGraph({ projectId }) {
           }
         });
       } else {
-        // Обновляем данные без сброса координат
+        // обновляем данные, не трогая координаты
         const nodesDataSet = networkRef.current.body.data.nodes;
         const edgesDataSet = networkRef.current.body.data.edges;
         
@@ -325,7 +325,7 @@ export default function TaskGraph({ projectId }) {
     } catch (err) { console.error("Graph load error:", err); }
   }, [projectId, loadSavedPositions, savePositions, searchQuery, filterStatus, filterAssignee]);
 
-  // Граф обновляется автоматически через WebSocket после пересчёта
+  // граф обновляется сам через ws
   useEffect(() => {
     loadGraphData();
     const ws = new WebSocket('ws://localhost:8000/ws');

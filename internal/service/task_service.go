@@ -16,7 +16,7 @@ import (
 	"github.com/sony/gobreaker"
 )
 
-// Layout даты для валидации deadline в milestones
+// формат даты для валидации дедлайна вех
 const deadlineLayout = "2006-01-02T15:04:05Z07:00"
 
 type TaskService struct {
@@ -48,12 +48,12 @@ func NewTaskService(repo *repository.TaskRepository, nc *nats.Conn, rdb *redis.C
 }
 
 func (s *TaskService) triggerMathEngine(projectID int) {
-	// Удаляем кэш, чтобы при следующем GET он перестроился с актуальными метриками из БД
+	// сбрасываем кэш, чтобы пересобрался с актуальными метриками
 	s.redis.Del(context.Background(), fmt.Sprintf("smartsync:graph:project:%d", projectID))
 	s.nc.Publish("project.updated", []byte(fmt.Sprintf(`{"project_id": %d}`, projectID)))
 }
 
-// enrichTasks подставляет имена авторов и исполнителей из auth-service
+// имена авторов/исполнителей тянем из auth-service
 func (s *TaskService) enrichTasks(tasks []models.Task) []models.Task {
 	if len(tasks) == 0 {
 		return tasks
@@ -70,7 +70,7 @@ func (s *TaskService) enrichTasks(tasks []models.Task) []models.Task {
 		ids = append(ids, id)
 	}
 
-	// Если ids пустой, не делаем HTTP запрос, а сразу подставляем заглушки
+	// нет id - не ходим в http, ставим заглушки
 	if len(ids) == 0 {
 		for i := range tasks {
 			tasks[i].CreatedByName = "Неизвестный автор"
@@ -277,7 +277,7 @@ func (s *TaskService) GetGraph(ctx context.Context, projectID, userID int) (*mod
 		}
 	}
 
-	// Кэш пуст — читаем из БД и сохраняем с TTL 1 час
+	// кэш пуст - достаём из бд, кладём на час
 	graph, err := s.repo.GetGraphData(projectID, userID)
 	if err == nil && graph != nil {
 		graph.Nodes = s.enrichTasks(graph.Nodes)
@@ -342,7 +342,7 @@ func (s *TaskService) GetTaskByID(id, userID int) (*models.Task, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Проверяем, что пользователь состоит в проекте задачи
+	// пользователь должен состоять в проекте задачи
 	if _, err := s.repo.CheckAccess(task.ProjectID, userID, models.RoleWeights[models.RoleViewer]); err != nil {
 		return nil, err
 	}
@@ -367,7 +367,7 @@ func (s *TaskService) CreateMilestone(projectID, userID int, title string, deadl
 	if _, err := s.repo.CheckAccess(projectID, userID, models.RoleWeights[models.RoleEditor]); err != nil {
 		return nil, err
 	}
-	// Проверяем формат даты: ISO 8601 или YYYY-MM-DD
+	// формат: iso 8601 либо yyyy-mm-dd
 	_, err := time.Parse(deadlineLayout, deadline)
 	if err != nil {
 		_, err2 := time.Parse("2006-01-02", deadline)

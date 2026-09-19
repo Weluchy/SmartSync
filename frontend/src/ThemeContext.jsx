@@ -31,7 +31,6 @@ ThemeProvider.propTypes = {
   children: PropTypes.node.isRequired,
 };
 
-// Отключаем правило линтера только для этого хука (стандартная практика Vite)
 // eslint-disable-next-line react-refresh/only-export-components
 export function useTheme() {
   return useContext(ThemeContext);

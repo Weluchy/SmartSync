@@ -19,7 +19,7 @@ export default function UserProfile() {
       const data = await api.get('/user/profile');
       if (data) {
         setProfile(prev => ({ ...prev, ...data }));
-        // Сохраняем ID из профиля
+        // id из профиля в localStorage
         if (data.id) {
           localStorage.setItem('userId', data.id);
           setUserId(data.id);
@@ -36,7 +36,7 @@ export default function UserProfile() {
         const fetchedLogs = logs || [];
         setAuditLogs(fetchedLogs);
 
-        // Безопасный сбор имен
+        // собираем имена, пропуская пустые
         const userIds = [...new Set(fetchedLogs.map(l => l.user_id).filter(Boolean))];
         const namesMap = {};
         for (const id of userIds) {

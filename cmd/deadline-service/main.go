@@ -72,7 +72,7 @@ func main() {
 				var t taskForCheck
 				rows.Scan(&t.ID, &t.Title, &t.ProjectID, &t.Status, &t.CreatedAt, &t.DurHours, &t.DeadlineAt)
 
-				// Выбираем: жесткий дедлайн или PERT-дедлайн
+				// либо жёсткий дедлайн, либо по PERT
 				var deadline time.Time
 				if t.DeadlineAt.Valid && t.DeadlineAt.Int64 > 0 {
 					deadline = time.UnixMilli(t.DeadlineAt.Int64)
@@ -82,7 +82,7 @@ func main() {
 
 				timeLeft := time.Until(deadline)
 
-				// Уведомления за 24ч, 6ч, 1ч до дедлайна
+				// напоминания 24ч/6ч/1ч и просрочка
 				if timeLeft > 0 && timeLeft < 25*time.Hour && timeLeft > 23*time.Hour {
 					publishDeadline(nc, t, "24ч", timeLeft)
 				} else if timeLeft > 0 && timeLeft < 7*time.Hour && timeLeft > 5*time.Hour {

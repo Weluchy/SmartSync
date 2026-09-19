@@ -15,7 +15,6 @@ import (
 	"github.com/nats-io/nats.go"
 )
 
-// Функция для чтения переменных окружения из Docker
 func getEnv(key, fallback string) string {
 	if value, ok := os.LookupEnv(key); ok {
 		return value
@@ -24,34 +23,29 @@ func getEnv(key, fallback string) string {
 }
 
 func main() {
-	// Читаем адреса из переменных окружения
 	dbURL := getEnv("DATABASE_URL", "postgres://user:password@127.0.0.1:5433/smartsync?sslmode=disable")
 	natsURL := getEnv("NATS_URL", "nats://localhost:4222")
 
-	// Подключение к Postgres
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 
-	// Жесткая проверка связи с БД
 	if err := db.Ping(); err != nil {
 		log.Fatal("Priority Service: База данных недоступна: ", err)
 	}
 
-	// Подключение к NATS
 	nc, err := nats.Connect(natsURL)
 	if err != nil {
 		log.Fatal("Priority Service: Ошибка подключения к NATS: ", err)
 	}
 	defer nc.Close()
 
-	// Инициализация
 	repo := repository.NewStorage(db)
 	calc := service.NewCalculator(repo)
 
-	// Подписываемся на события обновления проектов
+	// слушаем обновления проектов
 	nc.Subscribe("project.updated", func(m *nats.Msg) {
 		var payload struct {
 			ProjectID int `json:"project_id"`
@@ -66,7 +60,6 @@ func main() {
 
 	log.Println("Математический движок запущен и слушает события...")
 
-	// Graceful shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit

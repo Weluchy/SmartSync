@@ -80,7 +80,7 @@ export default function KanbanBoard({ projectId, onTasksChange, onViewUser }) {
   const deleteTask = async (e, id) => {
     e.stopPropagation();
     try {
-      // heal=true — автоматически перестраиваем граф после удаления
+      // heal=true - автоматически перестраиваем граф после удаления
       await api.delete(`/tasks/${id}?heal=true`);
       toast('Задача удалена. Граф перестроен.', {
         icon: '🗑️',
@@ -194,7 +194,7 @@ const saveEditTitle = async () => {
         if (data.project_id === Number(projectId)) {
           loadTasks();
           
-          // Показываем уведомление, если назначили этого пользователя
+          // уведомляем, если назначили тебя
           if (data.assignee_id && Number(data.assignee_id) === userId) {
             toast(`Вас назначили ответственным за задачу`, {
               icon: '📋',
@@ -335,7 +335,7 @@ const saveEditTitle = async () => {
                     let deadlineStr = '', exactDate = '';
                     let deadlineTime = 0;
 
-                    // Выбираем: жесткий дедлайн или расчётный
+                    // жёсткий дедлайн либо расчётный
                     if (task.deadline_at && task.deadline_at > 0) {
                       deadlineTime = task.deadline_at;
                     } else if (isDateValid && duration > 0) {

@@ -211,7 +211,7 @@ func (h *Handler) createDependency(c *gin.Context) {
 // @Security bearerAuth
 // @Router /projects/{project_id}/tasks [get]
 // @Summary Изменить статус задачи
-// @Description Меняет статус (todo → in_progress → done). Только исполнитель или admin+
+// @Description Меняет статус (todo -> in_progress -> done). Только исполнитель или admin+
 // @Tags Tasks
 // @Accept json
 // @Produce json
@@ -369,7 +369,7 @@ func (h *Handler) searchTasks(c *gin.Context) {
 		return
 	}
 
-	// Находим проекты, где пользователь участник
+	// проекты, где пользователь участник
 	projects, err := h.projectService.GetUserProjects(userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Ошибка поиска"})
@@ -394,7 +394,7 @@ func (h *Handler) searchTasks(c *gin.Context) {
 	c.JSON(http.StatusOK, results)
 }
 
-// contains проверяет подстроку без учёта регистра
+// поиск подстроки без учёта регистра
 func contains(s, substr string) bool {
 	return len(s) >= len(substr) && strings.Contains(strings.ToLower(s), strings.ToLower(substr))
 }

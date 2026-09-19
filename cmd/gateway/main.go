@@ -22,7 +22,7 @@ import (
 	"github.com/sony/gobreaker"
 )
 
-// Rate limiter: не более 100 запросов в секунду с одного IP
+// не более 100 запросов в сек с одного ip
 type ipRateLimiter struct {
 	visitors sync.Map
 	limit    int64
@@ -59,16 +59,10 @@ func (rl *ipRateLimiter) allow(ip string) bool {
 	val, _ := rl.visitors.LoadOrStore(ip, &visitor{})
 	v := val.(*visitor)
 	v.lastSeen = time.Now()
-
-	// атомарно увеличиваем счётчик
 	newCount := atomic.AddInt64(&v.count, 1)
-
-	// если превысили — блокируем
 	if newCount > rl.limit {
 		return false
 	}
-
-	// Если это первый запрос в окне, запускаем таймер сброса
 	if newCount == 1 {
 		go func() {
 			time.Sleep(rl.window)
@@ -82,7 +76,7 @@ var rateLimiter = newRateLimiter(100, 1*time.Second)
 
 var jwtSecret []byte
 
-// Circuit Breaker для task-service (отдельный для каждого сервиса, чтобы сбой одного не блокировал другой)
+// отдельный cb на сервис, чтобы один сбой не валил всё
 var taskCB *gobreaker.CircuitBreaker
 var authCB *gobreaker.CircuitBreaker
 var auditCB *gobreaker.CircuitBreaker
@@ -90,7 +84,7 @@ var auditCB *gobreaker.CircuitBreaker
 func newCB(name string) *gobreaker.CircuitBreaker {
 	st := gobreaker.Settings{
 		Name:        name,
-		MaxRequests: 5, // Больше тестовых запросов при проверке
+		MaxRequests: 5, // больше при проверке тестов
 		Interval:    10 * time.Second,
 		Timeout:     5 * time.Second, // Быстрее восстанавливаемся
 		ReadyToTrip: func(counts gobreaker.Counts) bool {
@@ -108,7 +102,6 @@ func init() {
 	auditCB = newCB("Audit-Service-CB")
 }
 
-// Настройка для WebSockets (разрешаем запросы с любых доменов)
 var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool {
 		return true
@@ -116,7 +109,6 @@ var upgrader = websocket.Upgrader{
 }
 
 func main() {
-	// JWT секрет из переменной окружения (может быть переопределён)
 	if envSecret := os.Getenv("JWT_SECRET"); envSecret != "" {
 		jwtSecret = []byte(envSecret)
 	}
@@ -124,24 +116,14 @@ func main() {
 	r := gin.Default()
 
 	r.Use(func(c *gin.Context) {
-		// CORS заголовки — ВСЕГДА, даже для OPTIONS (preflight)
 		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
 		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, DELETE, PUT, PATCH")
 		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
-		// OPTIONS (preflight) — отвечаем сразу, без rate limiter и без прокси
 		if c.Request.Method == "OPTIONS" {
 			c.AbortWithStatus(204)
 			return
 		}
-
-		// Rate limiting по IP (только для реальных запросов)
-		// ip := c.ClientIP()
-		// if !rateLimiter.allow(ip) {
-		// 	c.AbortWithStatusJSON(http.StatusTooManyRequests, gin.H{"error": "Слишком много запросов. Попробуйте позже."})
-		// 	return
-		// }
-
 		c.Next()
 	})
 
@@ -150,7 +132,6 @@ func main() {
 	taskURL := getEnv("TASK_SERVICE_URL", "http://localhost:8080")
 	auditURL := getEnv("AUDIT_SERVICE_URL", "http://localhost:8083")
 
-	// Подключаемся к NATS
 	nc, err := nats.Connect(natsURL)
 	if err != nil {
 		log.Println("⚠️ ВНИМАНИЕ: NATS недоступен. WebSockets работать не будут.")
@@ -159,7 +140,6 @@ func main() {
 		log.Println("✅ Gateway подключен к NATS для трансляции событий")
 	}
 
-	// Эндпоинт для WebSockets
 	r.GET("/ws", func(c *gin.Context) {
 		ws, err := upgrader.Upgrade(c.Writer, c.Request, nil)
 		if err != nil {
@@ -175,7 +155,7 @@ func main() {
 
 		log.Println("🟢 Клиент подключился к WebSocket!")
 
-		// Подписываемся на события обновления проектов
+		// форвардим обновления проекта в браузер
 		sub, err := nc.Subscribe("project.updated", func(msg *nats.Msg) {
 			log.Printf("📨 NATS поймал событие! Пушим в браузер: %s\n", string(msg.Data))
 			err := ws.WriteMessage(websocket.TextMessage, msg.Data)
@@ -190,7 +170,7 @@ func main() {
 		}
 		defer sub.Unsubscribe()
 
-		// Удерживаем соединение открытым (читаем системные пинги)
+		// держим соединение открытым
 		for {
 			_, _, err := ws.ReadMessage()
 			if err != nil {
@@ -200,7 +180,6 @@ func main() {
 		}
 	})
 
-	// Динамические прокси вместо жесткого localhost
 	authProxy := reverseProxy(authURL, authCB)
 	taskProxy := reverseProxy(taskURL, taskCB)
 	auditProxy := reverseProxy(auditURL, auditCB)
@@ -253,7 +232,6 @@ func main() {
 		protected.GET("/search", taskProxy)
 	}
 
-	// Graceful shutdown
 	srv := &http.Server{
 		Addr:    ":8000",
 		Handler: r,
@@ -318,26 +296,24 @@ func reverseProxy(target string, cb *gobreaker.CircuitBreaker) gin.HandlerFunc {
 	targetURL, _ := url.Parse(target)
 	proxy := httputil.NewSingleHostReverseProxy(targetURL)
 
-	// Перехватываем системные ошибки прокси (например, сервис физически выключен)
 	proxy.ErrorHandler = func(rw http.ResponseWriter, req *http.Request, err error) {
 		rw.WriteHeader(http.StatusBadGateway) // 502 код
 		rw.Write([]byte(fmt.Sprintf(`{"error": "Внутренний сервис %s недоступен"}`, targetURL.Host)))
 	}
 
 	return func(c *gin.Context) {
-		// Пропускаем запрос через предохранитель
 		_, err := cb.Execute(func() (interface{}, error) {
 
 			proxy.ServeHTTP(c.Writer, c.Request)
 
-			// Если сервис вернул статус 5xx, считаем это поломкой микросервиса
+			// сервис вернул 5xx - считаем его упавшим
 			if c.Writer.Status() >= http.StatusInternalServerError {
 				return nil, fmt.Errorf("микросервис вернул ошибку сервера")
 			}
 			return nil, nil
 		})
 
-		// Если цепь разомкнута, сразу возвращаем ошибку, не нагружая упавший сервис
+		// цепь разомкнута - отдаём 503, не нагружая упавший сервис
 		if err == gobreaker.ErrOpenState {
 			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{
 				"error": "Система перегружена. Включился предохранитель (Circuit Breaker). Подождите 7 секунд.",

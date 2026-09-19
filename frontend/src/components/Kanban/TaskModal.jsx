@@ -14,7 +14,7 @@ export default function TaskModal({ isOpen, onClose, onSave, projectId, initialD
   const [newComment, setNewComment] = useState('');
   const [isPreview, setIsPreview] = useState(false);
   const [activeTab, setActiveTab] = useState('details');
-  // Форматируем время для input type="datetime-local"
+  // время под формат datetime-local
   const formatLocalDatetime = (ms) => {
     if (!ms) return '';
     const d = new Date(ms);

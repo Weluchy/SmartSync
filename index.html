@@ -203,7 +203,7 @@
                 const isActive = currentProjectId === p.id;
                 li.className = `p-2 rounded-lg cursor-pointer flex justify-between items-center transition ${isActive ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-100'}`;
                 
-                // Если мы гость, вешаем красивый фиолетовый бейдж
+                // гость - вешаем фиолетовый бейдж
                 let roleBadge = p.role === 'owner' ? '' : `<span class="text-[10px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded-full ml-2 font-bold">гость</span>`;
                 
                 li.innerHTML = `
@@ -259,9 +259,9 @@
                 method: 'DELETE',
                 headers: {'Authorization': `Bearer ${token}`}
             });
-            currentProjectId = null; // Сбрасываем выбранный проект
+            currentProjectId = null; // сбрасываем выбор проекта
             closeProjectSettings();
-            loadProjects(); // Загрузит список и выберет первый доступный проект
+            loadProjects(); // перезагрузим список и выберем первый доступный
         }
 
         async function inviteToProject() {
@@ -283,7 +283,7 @@
 
         function selectProject(id) {
             currentProjectId = id;
-            loadProjects(); // Перерисовываем список для подсветки активного
+            loadProjects(); // перерисовка списка под активный
             loadGraph();
         }
 
@@ -295,7 +295,7 @@
                 method: 'POST',
                 headers: {'Content-Type': 'application/json', 'Authorization': `Bearer ${token}`},
                 body: JSON.stringify({
-                    project_id: currentProjectId, // ТЕПЕРЬ ПРИВЯЗЫВАЕМ К ПРОЕКТУ!
+                    project_id: currentProjectId, // привязка к проекту
                     title: document.getElementById('t_title').value,
                     opt: parseInt(document.getElementById('t_opt').value) || 1,
                     real: parseInt(document.getElementById('t_real').value) || 1,
@@ -321,7 +321,7 @@
 
         async function resetDeps() {
             if (!currentProjectId || !confirm("Удалить все связи в этом проекте?")) return;
-            await fetch(`${GATEWAY}/projects/${currentProjectId}/dependencies`, { // СБРОС ТОЛЬКО В ПРОЕКТЕ
+            await fetch(`${GATEWAY}/projects/${currentProjectId}/dependencies`, { // сброс связей проекта
                 method: 'DELETE',
                 headers: {'Authorization': `Bearer ${token}`} 
             });
@@ -369,7 +369,7 @@
 
         async function loadGraph() {
             if (!currentProjectId) return;
-            // ЗАПРАШИВАЕМ ГРАФ ТОЛЬКО ДЛЯ ВЫБРАННОГО ПРОЕКТА
+            // граф только для выбранного проекта
             const res = await fetch(`${GATEWAY}/projects/${currentProjectId}/graph`, { headers: {'Authorization': `Bearer ${token}`} });
             const data = await res.json();
             currentGraphData = data;
@@ -392,7 +392,7 @@
                 smooth: { type: 'cubicBezier', forceDirection: 'horizontal', roundness: 0.4 }
             })) || []);
 
-            if (network) network.destroy(); // Удаляем старый граф перед отрисовкой нового
+            if (network) network.destroy(); // сеть пересоздаём с нуля
 
             network = new vis.Network(document.getElementById('mynetwork'), {nodes, edges}, {
                 layout: { hierarchical: { direction: 'LR', sortMethod: 'directed', levelSeparation: 200 } },
@@ -420,7 +420,7 @@
             });
         }
 
-        // Запуск
+        // старт
         checkSession();
     </script>
 </body>

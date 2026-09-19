@@ -2,14 +2,14 @@ package models
 
 import "time"
 
-// Константы статусов задач
+// статусы задач
 const (
 	StatusTodo       = "todo"
 	StatusInProgress = "in_progress"
 	StatusDone       = "done"
 )
 
-// ValidTaskStatuses — список допустимых статусов для валидации
+// что допустимо
 var ValidTaskStatuses = map[string]bool{
 	StatusTodo:       true,
 	StatusInProgress: true,
@@ -33,7 +33,7 @@ type Task struct {
 	DeadlineAt    *int64    `json:"deadline_at"`
 	CreatedAt     time.Time `json:"created_at"`
 
-	// Эти поля заполняются динамически через сервис
+	// заполняются уже в сервисе
 	CreatedByName  string `json:"created_by_name"`
 	AssigneeName   string `json:"assignee_name"`
 	MilestoneTitle string `json:"milestone_title,omitempty"`

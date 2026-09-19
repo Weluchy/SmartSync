@@ -12,7 +12,6 @@ type User struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
-// Модель для обновления профиля
 type ProfileUpdateRequest struct {
 	FullName string `json:"full_name"`
 	Stack    string `json:"stack"`

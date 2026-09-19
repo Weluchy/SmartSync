@@ -80,7 +80,7 @@ func (h *Handler) exportProjectCSV(c *gin.Context) {
 		return
 	}
 
-	// Формируем CSV
+	// csv собираем вручную
 	csv := "ID,Название,Описание,Статус,Опт,Реал,Песс,Исполнитель,Приоритет,Длительность\n"
 	for _, t := range tasks {
 		assignee := ""

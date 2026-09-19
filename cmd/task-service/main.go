@@ -46,7 +46,7 @@ func main() {
 	}
 	defer db.Close()
 
-	// Ждём, пока БД станет доступной (актуально при запуске в Docker)
+	// ждём, пока поднимется бд (в docker она стартует медленнее)
 	for i := 0; i < 5; i++ {
 		err = db.Ping()
 		if err == nil {
@@ -74,12 +74,11 @@ func main() {
 	httpHandler := handler.NewHandler(taskService, projectService)
 	router := httpHandler.InitRoutes()
 
-	// Добавляем Prometheus middleware для всех маршрутов
+	// метрики для prometheus
 	router.Use(handler.PrometheusMiddleware())
 	router.GET("/metrics", gin.WrapH(promhttp.Handler()))
 	router.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	// Graceful shutdown
 	srv := &http.Server{
 		Addr:    ":8080",
 		Handler: router,

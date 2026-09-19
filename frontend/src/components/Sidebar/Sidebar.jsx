@@ -20,7 +20,7 @@ export default function Sidebar({ projects, currentProjectId, onSelectProject, o
   const [servicesStatus, setServicesStatus] = useState({});
   const [editingProject, setEditingProject] = useState(null);
 
-  // Проверка доступности микросервисов
+  // пингуем микросервисы
   const pingServices = useCallback(async () => {
     const results = {};
     for (const svc of MICROSERVICES) {

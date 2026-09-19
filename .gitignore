@@ -46,3 +46,4 @@ bench_test.go
 gather.go
 start.bat
 start.ps1
+start-cloud.sh

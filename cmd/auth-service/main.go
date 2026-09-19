@@ -36,7 +36,6 @@ func main() {
 	}
 	defer db.Close()
 
-	// Цикл ожидания базы данных
 	maxRetries := 5
 	for i := 0; i < maxRetries; i++ {
 		err = db.Ping()
@@ -58,7 +57,6 @@ func main() {
 
 	router := httpHandler.InitRoutes()
 
-	// Graceful shutdown
 	srv := &http.Server{
 		Addr:    ":8081",
 		Handler: router,

@@ -17,7 +17,7 @@ func main() {
 	}
 	defer outFile.Close()
 
-	// Папки, которые скрипт будет пропускать
+	// что пропускаем при обходе
 	ignoreDirs := map[string]bool{
 		".git":         true,
 		"node_modules": true,
@@ -27,7 +27,7 @@ func main() {
 		"docs":         true,
 	}
 
-	// Расширения файлов, которые не нужно читать (бинарники, картинки)
+	// бинарники и картинки не читаем
 	ignoreExts := map[string]bool{
 		".exe": true, ".dll": true, ".so": true,
 		".png": true, ".jpg": true, ".svg": true, ".ico": true,
@@ -42,7 +42,7 @@ func main() {
 			return nil
 		}
 
-		// Пропускаем сам файл скрипта и итоговый файл
+		// не копируем самих себя
 		if path == outputFileName || path == "gather.go" {
 			return nil
 		}
@@ -59,13 +59,12 @@ func main() {
 			return nil
 		}
 
-		// Читаем содержимое файла
 		content, err := os.ReadFile(path)
 		if err != nil {
 			return nil
 		}
 
-		// Записываем разделитель с названием файла
+		// название файла как разделитель
 		separator := fmt.Sprintf("\n\n========================================\nФАЙЛ: %s\n========================================\n\n", path)
 		outFile.WriteString(separator)
 		outFile.Write(content)

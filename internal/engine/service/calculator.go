@@ -27,7 +27,7 @@ func (c *Calculator) RecalculateGraph(projectID int) {
 	earlyStart := make(map[int]float64)
 	createdAt := make(map[int]time.Time)
 
-	// Инициализация всех задач
+	// начальные значения по каждой задаче
 	for _, t := range tasks {
 		inDegree[t.ID] = 0
 		if t.Status == "done" {
@@ -40,13 +40,13 @@ func (c *Calculator) RecalculateGraph(projectID int) {
 		createdAt[t.ID] = t.CreatedAt
 	}
 
-	// Построение связей (e.From = родитель, e.To = ребенок)
+	// e.from - родитель, e.to - ребёнок
 	for _, e := range edges {
 		adj[e.From] = append(adj[e.From], e.To)
 		inDegree[e.To]++
 	}
 
-	// Топологическая сортировка (алгоритм Кана)
+	// топологическая сортировка (кан)
 	var queue []int
 	for _, t := range tasks {
 		if inDegree[t.ID] == 0 {
@@ -58,7 +58,7 @@ func (c *Calculator) RecalculateGraph(projectID int) {
 		curr := queue[0]
 		queue = queue[1:]
 		for _, child := range adj[curr] {
-			// Если путь через текущего родителя дольше — обновляем ребёнка
+			// родитель даёт более поздний старт - обновляем ребёнка
 			startFromParent := earlyFinish[curr]
 			if startFromParent > earlyStart[child] {
 				earlyStart[child] = startFromParent
@@ -71,18 +71,17 @@ func (c *Calculator) RecalculateGraph(projectID int) {
 		}
 	}
 
-	// Каскадный пересчёт дедлайнов (Forward Pass)
-	// Берём самое раннее время создания среди корневых задач
+	// дедлайны считаем от самой ранней корневой задачи
 	var baseTime time.Time
 	for _, t := range tasks {
-		if inDegree[t.ID] == 0 { // переиспользуем inDegree как флаг "корневая"
+		if inDegree[t.ID] == 0 { // inDegree тут как флаг "корневая"
 			if baseTime.IsZero() || createdAt[t.ID].Before(baseTime) {
 				baseTime = createdAt[t.ID]
 			}
 		}
 	}
 	if baseTime.IsZero() {
-		// Если нет корневых — берём самое раннее время
+		// нет корневых - берём самое раннее время
 		for _, t := range tasks {
 			if baseTime.IsZero() || createdAt[t.ID].Before(baseTime) {
 				baseTime = createdAt[t.ID]
@@ -90,9 +89,8 @@ func (c *Calculator) RecalculateGraph(projectID int) {
 		}
 	}
 
-	// Сохранение метрик и дедлайнов
 	for _, t := range tasks {
-		// Конвертируем earlyFinish (часы) в timestamp (unix ms)
+		// earlyFinish в часах -> unix ms
 		deadlineUnix := baseTime.UnixMilli() + int64(earlyFinish[t.ID]*3600000)
 		c.repo.UpdateTaskMetrics(t.ID, durations[t.ID], earlyFinish[t.ID], deadlineUnix)
 	}

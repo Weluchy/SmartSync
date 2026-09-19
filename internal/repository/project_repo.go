@@ -14,7 +14,7 @@ func NewProjectRepository(db *sql.DB) *ProjectRepository {
 	return &ProjectRepository{db: db}
 }
 
-// Получаем все проекты (включая архивные)
+// все проекты (и архивные)
 func (r *ProjectRepository) GetUserProjects(userID int) ([]models.Project, error) {
 	query := `
     SELECT p.id, p.name, p.owner_id, pm.role, COALESCE(p.archived, false)
@@ -36,7 +36,7 @@ func (r *ProjectRepository) GetUserProjects(userID int) ([]models.Project, error
 		projects = append(projects, p)
 	}
 
-	// Дефолтный проект для новых пользователей
+	// новичку создаём дефолтный проект
 	if len(projects) == 0 {
 		return r.createDefaultProject(userID)
 	}
@@ -66,7 +66,6 @@ func (r *ProjectRepository) createDefaultProject(userID int) ([]models.Project, 
 	return []models.Project{{ID: newID, Name: "Мой первый проект", OwnerID: userID, Role: "owner", Archived: false}}, nil
 }
 
-// Создание нового проекта с транзакцией
 func (r *ProjectRepository) CreateProject(name string, ownerID int) (int, error) {
 	tx, err := r.db.Begin()
 	if err != nil {
@@ -80,7 +79,7 @@ func (r *ProjectRepository) CreateProject(name string, ownerID int) (int, error)
 		return 0, err
 	}
 
-	// Сразу выдаем создателю права 'owner'
+	// создателю сразу 'owner'
 	_, err = tx.Exec("INSERT INTO project_members (project_id, user_id, role) VALUES ($1, $2, 'owner')", id, ownerID)
 	if err != nil {
 		return 0, err
@@ -89,19 +88,18 @@ func (r *ProjectRepository) CreateProject(name string, ownerID int) (int, error)
 	return id, tx.Commit()
 }
 
-// Безопасное удаление проекта (только для владельцев)
+// удалить может только владелец
 func (r *ProjectRepository) DeleteProject(projectID, userID int) error {
 	_, err := r.db.Exec("DELETE FROM projects WHERE id = $1 AND owner_id = $2", projectID, userID)
 	return err
 }
 
-// Обновление названия проекта
 func (r *ProjectRepository) RenameProject(projectID, userID int, newName string) error {
 	_, err := r.db.Exec("UPDATE projects SET name = $1 WHERE id = $2 AND owner_id = $3", newName, projectID, userID)
 	return err
 }
 
-// AddMember приглашает пользователя в проект по логину
+// приглашение участника по логину
 func (r *ProjectRepository) AddMember(projectID, ownerID int, username string, role string) error {
 	var actualOwner int
 	err := r.db.QueryRow("SELECT owner_id FROM projects WHERE id = $1", projectID).Scan(&actualOwner)
@@ -206,7 +204,6 @@ func (r *ProjectRepository) GetInvitedProjects(userID int) ([]models.Project, er
 	return projects, nil
 }
 
-// Удаление участника (с проверкой прав)
 func (r *ProjectRepository) RemoveMember(projectID, ownerID, targetUserID int) error {
 	var actualOwner int
 	err := r.db.QueryRow("SELECT owner_id FROM projects WHERE id = $1", projectID).Scan(&actualOwner)

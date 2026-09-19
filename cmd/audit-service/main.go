@@ -95,7 +95,7 @@ func main() {
 		userIDStr := c.GetHeader("X-User-ID")
 		userIDInt, _ := strconv.Atoi(userIDStr)
 
-		// Фильтруем историю только для текущего пользователя
+		// только логи текущего пользователя
 		filter := bson.M{"$or": []bson.M{{"user_id": userIDStr}, {"user_id": userIDInt}}}
 
 		opts := options.Find().SetSort(bson.D{{Key: "timestamp", Value: -1}}).SetLimit(30)
@@ -117,7 +117,6 @@ func main() {
 		c.JSON(http.StatusOK, logs)
 	})
 
-	// Graceful shutdown
 	srv := &http.Server{
 		Addr:    ":8083",
 		Handler: r,

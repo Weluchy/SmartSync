@@ -19,12 +19,10 @@ func NewAuthHandler(s *service.AuthService) *AuthHandler {
 func (h *AuthHandler) InitRoutes() *gin.Engine {
 	r := gin.Default()
 
-	// Настройка CORS
-
 	r.POST("/register", h.register)
 	r.POST("/login", h.login)
 
-	// Добавляем маршрут, который ждет фронтенд
+	// маршруты, которые ждёт фронт
 	r.GET("/user/profile", h.getProfile)
 	r.PUT("/user/profile", h.updateProfile)
 	r.GET("/users/:id", h.getUserByID)
@@ -83,7 +81,6 @@ func (h *AuthHandler) login(c *gin.Context) {
 	c.JSON(http.StatusOK, models.AuthResponse{Token: token})
 }
 
-// Получение профиля
 func (h *AuthHandler) getProfile(c *gin.Context) {
 	userIDStr := c.GetHeader("X-User-ID")
 	user, err := h.service.Repo().GetProfileByID(parseID(userIDStr))
@@ -101,7 +98,6 @@ func (h *AuthHandler) getProfile(c *gin.Context) {
 	})
 }
 
-// Обновление профиля
 func (h *AuthHandler) updateProfile(c *gin.Context) {
 	userIDStr := c.GetHeader("X-User-ID")
 
@@ -119,7 +115,6 @@ func (h *AuthHandler) updateProfile(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "success", "message": "Профиль обновлен"})
 }
 
-// Вспомогательная функция для парсинга ID
 func parseID(idStr string) int {
 	var id int
 	fmt.Sscanf(idStr, "%d", &id)
@@ -135,7 +130,7 @@ func (h *AuthHandler) getUserByID(c *gin.Context) {
 		return
 	}
 
-	// Отдаем публичные данные (без паролей и токенов)
+	// только публичные поля, без паролей
 	c.JSON(http.StatusOK, gin.H{
 		"id":        user.ID,
 		"username":  user.Username,

@@ -10,7 +10,7 @@ import (
 )
 
 var (
-	// Счётчик запросов по методам и статусам
+	// запросы по методу/эндпоинту/статусу
 	requestCounter = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "smartsync_requests_total",
@@ -19,7 +19,7 @@ var (
 		[]string{"method", "endpoint", "status"},
 	)
 
-	// Гистограмма времени ответа (секунды)
+	// время ответа в секундах
 	requestDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "smartsync_request_duration_seconds",
@@ -29,7 +29,7 @@ var (
 		[]string{"method", "endpoint"},
 	)
 
-	// Счётчик ошибок по типу
+	// ошибки по коду ответа
 	errorCounter = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "smartsync_errors_total",
@@ -38,7 +38,7 @@ var (
 		[]string{"method", "endpoint", "status"},
 	)
 
-	// Счётчик активных WebSocket соединений
+	// активные ws
 	activeWS = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "smartsync_websocket_active",
@@ -47,12 +47,11 @@ var (
 	)
 )
 
-// PrometheusMiddleware собирает метрики по каждому запросу
 func PrometheusMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 
-		// Пропускаем /metrics чтобы не зациклиться
+		// не считаем сам /metrics, иначе зациклимся
 		if c.Request.URL.Path == "/metrics" {
 			c.Next()
 			return
@@ -60,13 +59,11 @@ func PrometheusMiddleware() gin.HandlerFunc {
 
 		c.Next()
 
-		// Собираем данные после ответа
 		latency := time.Since(start).Seconds()
 		method := c.Request.Method
 		endpoint := c.FullPath()
 		status := strconv.Itoa(c.Writer.Status())
 
-		// Инкрементим счётчики
 		requestCounter.WithLabelValues(method, endpoint, status).Inc()
 		requestDuration.WithLabelValues(method, endpoint).Observe(latency)
 
@@ -76,7 +73,6 @@ func PrometheusMiddleware() gin.HandlerFunc {
 	}
 }
 
-// GetActiveWS возвращает счётчик активных WebSocket соединений
 func GetActiveWS() prometheus.Gauge {
 	return activeWS
 }
